@@ -1,0 +1,16 @@
+[package]
+name = "kaleido"
+version = "0.1.0"
+authors = ["Felix S. Klock II <pnkfelix@pnkfx.org>"]
+
+build = "build.rs"
+
+[build-dependencies.tango]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# llvm = "*"
+llvm-alt = "0.3.1"
+semver = "*"
