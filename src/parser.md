@@ -173,8 +173,16 @@ I have already somewhat hard-coded the logic there.
    the first token of some fresh non-terminal representing the
    distinct suffixes.)
 
+All of the parse implementation methods will be in a single `impl` block.
+
 ```rust
 impl<'l> Parser<'l> {
+```
+
+`parse_expr` dispatches on the first token; each element of
+`FIRST(Expr)` corresponds to a distinct alternative of the grammar.
+
+```rust
     pub fn parse_expr(&mut self) -> Result<Expr> {
         let err = |kind| {
             Err(ParseError { context: ParseContext::Expr, kind: kind })
@@ -198,7 +206,15 @@ impl<'l> Parser<'l> {
             t @ Token::Char(_) => return err(ParseErrorKind::UnexpectedToken(t)),
         }
     }
+```
 
+`parse_form` dispatches on the second token; this is "okay" in terms
+of the rules of LL(1) since the first token for `Form` is always
+`'('`. The second token is one of
+`{ 'def', 'extern' } DISJOINT_UNION FIRST(Exprs)`,
+corresponding to each of the three alternatives.
+
+```rust
     fn parse_form(&mut self) -> Result<Expr> {
         assert!(self.next == Some(Token::Char('(')));
         self.clear_next();
@@ -250,7 +266,11 @@ impl<'l> Parser<'l> {
             }
         }
     }
+```
 
+`parse_proto` does not need to dispatch.
+
+```rust
     fn parse_proto(&mut self, pc: ProtoContext) -> Result<Proto> {
         // Proto    ::= Ident Args
         let err = |kind| {
@@ -267,7 +287,17 @@ impl<'l> Parser<'l> {
         };
         Ok(Proto { name: name, args: args })
     }
+```
 
+`parse_args` does not need to dispatch, at least not to choose an
+immediate alternative.
+
+(Where it *does* need to dipatch is in deciding whether to end the
+loop; again, strictly speaking a true LL(1) form of the grammar would
+probably need to elaborate on operators like the `...` that I used in
+my grammars above.)
+
+```rust
     fn parse_args(&mut self) -> Result<Vec<Ident>> {
         // Args     ::= '(' Ident ... ')'
         let err = |kind| {
@@ -291,7 +321,13 @@ impl<'l> Parser<'l> {
             v.push(arg);
         }
     }
+```
 
+`parse_exprs` is analogous to `parse_arg` -- it has only one
+alternative, but it does contain a Kleene closure form and thus needs
+to accumulate the expressions there.
+
+```rust
     fn parse_exprs(&mut self) -> Result<Vec<Expr>> {
         // Exprs    ::= Expr ... ')'
         let err = |kind| {
@@ -311,8 +347,14 @@ impl<'l> Parser<'l> {
         }
     }
 }
+```
 
+Test cases, written from scratch. (Maybe later I will look at the
+official tutorial source to see if it shows any unit tests of its own,
+but my memory is that the tutorial code was pretty light with respect
+to unit testing.)
 
+```rust
 #[test]
 fn parse_empty() {
     let mut input = "".chars();
