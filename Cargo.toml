@@ -8,6 +8,7 @@ build = "build.rs"
 [build-dependencies.tango]
 
 [lib]
+name = "lib"
 path = "src/lib.rs"
 
 [dependencies]

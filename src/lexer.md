@@ -4,10 +4,13 @@ We can choose names without the "tok_" prefix because of how Rust namespaces enu
 because Rust has algebraic data types.
 
 ```rust
+use std::borrow::Cow;
+use std::mem;
+
 /// The lexer returns Char for char in "known" operator range [0-255];
 /// otherwise one of the other variants for known things.
-#[derive(PartialEq, Debug)]
-enum Token {
+#[derive(Clone, PartialEq, Debug)]
+pub enum Token {
     Char(char),
     EndOfInput,
     /// def command
@@ -15,7 +18,7 @@ enum Token {
     /// extern command
     Extern,
     /// primary
-    Identifier(String),
+    Identifier(Cow<'static, str>),
     Number(f64),
 }
 
@@ -35,12 +38,40 @@ static semantics for when the lexer has filled its `last_char`
 "buffer" (i.e. it has read the next charater) and when that
 "buffer" is empty (i.e. it has processed that character and
 accumulated it properly in whatever identifier or other state
-that it contributed to.
+that it contributed to. So I defined the logic in terms of a `LexerSession`,
+which carries the state of its buffer in its type, and then wrapped
+that in a `Lexer` for use by clients who are ignoring the buffer
+state.
 
 (The `last_char` and `input` fields are explained further below.)
 
 ```rust
-struct Lexer<'a, CS: CharState> {
+pub struct Lexer<'a>(LexerState<'a>);
+
+enum LexerState<'a> {
+    Empty(LexerSession<'a, ()>),
+    Input(LexerSession<'a, LastChar>),
+    Dance, // emulating an old-school option dance
+}
+
+impl<'a> Lexer<'a> {
+    pub fn new(input: &'a mut Iterator<Item=char>) -> Lexer<'a> {
+        Lexer(LexerState::Empty(LexerSession::new(input)))
+    }
+
+    pub fn next(&mut self) -> Token {
+        let l = mem::replace(&mut self.0, LexerState::Dance);
+        let (l, c) = match l {
+            LexerState::Empty(ls) => ls.get_tok(),
+            LexerState::Input(ls) => ls.get_tok(),
+            LexerState::Dance => panic!("`Lexer::next` is not re-entrant"),
+        };
+        self.0 = LexerState::Input(l);
+        c
+    }
+}
+
+struct LexerSession<'a, CS: CharState> {
     input: Input<'a>,
     last_char: CS,
 }
@@ -92,7 +123,7 @@ impl CharState for LastChar {
     }
 
     /// provides char for processing, reading from `i` if necessary
-    fn initial(self, i: &mut Input) -> LastChar {
+    fn initial(self, _: &mut Input) -> LastChar {
         self
     }
 }
@@ -107,9 +138,9 @@ impl LastChar {
     }
 }
 
-impl<'a> Lexer<'a, ()> {
-    fn new(input: &'a mut Iterator<Item=char>) -> Lexer<()> {
-        Lexer {
+impl<'a> LexerSession<'a, ()> {
+    fn new(input: &'a mut Iterator<Item=char>) -> LexerSession<()> {
+        LexerSession {
             input: input,
             last_char: (),
         }
@@ -126,20 +157,20 @@ but seems to help remove some of the ugliness in the code that
 adopting Rust idioms injected.)
 
 ```rust
-impl<'a, CS:CharState> Lexer<'a, CS> {
-    fn next_char(mut self) -> Lexer<'a, LastChar> {
+impl<'a, CS:CharState> LexerSession<'a, CS> {
+    fn next_char(mut self) -> LexerSession<'a, LastChar> {
         let c = match self.input.next() {
             None => LastChar::End,
             Some(c) => LastChar::Char(c),
         };
-        Lexer {
+        LexerSession {
             input: self.input,
             last_char: c,
         }
     }
 }
 
-impl<'a> Lexer<'a, LastChar> {
+impl<'a> LexerSession<'a, LastChar> {
     fn get_char(&mut self) -> LastChar {
         let c = match self.input.next() {
             None => LastChar::End,
@@ -155,15 +186,15 @@ Okay the bulk of the lexer code is dedicated to the body of `gettok`,
 which returns the next token.
 
 In the original tutorial text this read from standard-input, but I saw
-no reason to not just attach the input stream to the `Lexer` value
+no reason to not just attach the input stream to the `LexerSession` value
 itself. (And rather than use an actual stream, we can just use a
 `char` iterator, since IO input stream carry a method that yields a
 `char` iterator.
 
 ```rust
-impl<'a, CS:CharState> Lexer<'a, CS> {
-    fn get_tok(mut self) -> (Lexer<'a, LastChar>, Token) {
-        let mut l = Lexer {
+impl<'a, CS:CharState> LexerSession<'a, CS> {
+    fn get_tok(mut self) -> (LexerSession<'a, LastChar>, Token) {
+        let mut l = LexerSession {
             last_char: self.last_char.initial(&mut self.input),
             input: self.input
         };
@@ -216,7 +247,7 @@ the appropriate token for that string when it does.
 
                 if identifier_str == "def" { return (l, Token::Def); }
                 if identifier_str == "extern" { return (l, Token::Extern); }
-                return (l, Token::Identifier(identifier_str));
+                return (l, Token::Identifier(Cow::Owned(identifier_str)));
             }
 ```
 
@@ -261,7 +292,7 @@ Like the tutorial, we handle comments next.
                 return l.get_tok();
             }
 
-            c => return (l, Token::Char(c)),
+            c => return (l.next_char(), Token::Char(c)),
         }
 ```
 
@@ -288,8 +319,127 @@ the various ways I deviated from the original code in my design above.
 
 ```rust
 #[test]
-fn lex_empty() {
-    assert_eq!(Lexer::new(&mut "".chars()).get_tok().1,
+fn lexsess_empty() {
+    assert_eq!(LexerSession::new(&mut "".chars()).get_tok().1,
                Token::EndOfInput);
+}
+
+#[test]
+fn lexsess_def() {
+    assert_eq!(LexerSession::new(&mut "def".chars()).get_tok().1,
+               Token::Def);
+}
+
+#[test]
+fn lexsess_ws_def() {
+    assert_eq!(LexerSession::new(&mut "   def".chars()).get_tok().1,
+               Token::Def);
+}
+
+#[test]
+fn lexsess_ws_extern() {
+    assert_eq!(LexerSession::new(&mut "   extern".chars()).get_tok().1,
+               Token::Extern);
+}
+
+#[test]
+fn lexsess_ws_extern_ws() {
+    assert_eq!(LexerSession::new(&mut "   extern ".chars()).get_tok().1,
+               Token::Extern);
+}
+
+#[test]
+fn lexsess_ws_ident() {
+    assert_eq!(LexerSession::new(&mut "   ident ".chars()).get_tok().1,
+               Token::Identifier(Cow::Borrowed("ident")));
+}
+
+#[test]
+fn lexsess_ws_zero() {
+    assert_eq!(LexerSession::new(&mut "   0 ".chars()).get_tok().1,
+               Token::Number(0.0));
+}
+
+#[test]
+fn lexsess_ws_pi() {
+    assert!(match LexerSession::new(&mut "   3.14159 ".chars()).get_tok().1 {
+        Token::Number(p) => (p - 3.14159).abs() < 0.00001,
+        _ => false,
+    });
+}
+
+#[test]
+fn lexsess_ws_plus() {
+    assert_eq!(LexerSession::new(&mut "   + ".chars()).get_tok().1,
+               Token::Char('+'));
+}
+
+#[test]
+fn lexsess_ws_div() {
+    assert_eq!(LexerSession::new(&mut "   / ".chars()).get_tok().1,
+               Token::Char('/'));
+}
+
+// Now for some (maybe) non-obvious corner cases: We do not lex things like `"+="`
+// as a single operator; it is lexed instead as two separate tokens: `+` and `=`.
+
+#[test]
+fn lexsess_ws_pluseq() {
+    let mut input = "  += ".chars();
+    let l = LexerSession::new(&mut input);
+    let (l, c0) = l.get_tok();
+    let (_, c1) = l.get_tok();
+    assert_eq!((c0, c1),
+               (Token::Char('+'), Token::Char('=')));
+}
+
+#[test]
+fn lexsess_ws_identplusident() {
+    let mut input = "  a+b ".chars();
+    let l = LexerSession::new(&mut input);
+    let (l, c0) = l.get_tok();
+    let (l, c1) = l.get_tok();
+    let (_, c2) = l.get_tok();
+    assert_eq!((c0, c1, c2),
+               (Token::Identifier(Cow::Borrowed("a")),
+                Token::Char('+'),
+                Token::Identifier(Cow::Borrowed("b"))));
+}
+
+#[test]
+fn lexsess_ws_def_identopenclose() {
+    let mut input = "  def a() ".chars();
+    let l = LexerSession::new(&mut input);
+    let (l, c0) = l.get_tok();
+    let (l, c1) = l.get_tok();
+    let (l, c2) = l.get_tok();
+    let (_, c3) = l.get_tok();
+    assert_eq!((c0, c1, c2, c3),
+               (Token::Def,
+                Token::Identifier(Cow::Borrowed("a")),
+                Token::Char('('),
+                Token::Char(')')));
+}
+```
+
+Finally, here is a repeat of a previous test, but using the
+`Lexer` type that we actually expose to the outside world
+(that has a more traditional parser interface via a `&mut self`
+method rather than using a session type.)
+
+```rust
+#[test]
+fn lex_ws_def_identopenclose() {
+    let mut input = "  def a() ".chars();
+    let mut l = Lexer::new(&mut input);
+    let c0 = l.next();
+    let c1 = l.next();
+    let c2 = l.next();
+    let c3 = l.next();
+    assert_eq!((c0, c1, c2, c3),
+               (Token::Def,
+                Token::Identifier(Cow::Borrowed("a")),
+                Token::Char('('),
+                Token::Char(')')));
 }
 ```
