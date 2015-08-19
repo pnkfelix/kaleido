@@ -53,6 +53,20 @@ Regardless of the structure of the grammar, I want a standard
 interface to the parser that will remain the same even if the language
 goes through future changes.
 
+With respect to error handling, I gradually built up the structure
+below, where any parse error has an associated `ParseContext`
+(which tells us the outermost thing we were trying to parse when
+we encountered the error), and a `ParseErrorKind`, which tells us
+the type of error we encountered.
+
+ * Note that the `ParseErrorKind` might be a *nested* error,
+   i.e. something went wrong during a recursive attempt to parse some
+   subform in the grammar (and that this can nest arbitrarily).
+
+ * So to find the "actual" error, one might need to traverse deep into
+   the nesting structure. Perhaps I should invert this structure, but
+   this is the way it is for now.
+
 ```rust
 use std::result::Result as StdResult;
 use super::lexer::{Lexer, Token};
@@ -85,7 +99,17 @@ pub enum ParseContext {
 pub enum ProtoContext {
     Def, Extern,
 }
+```
 
+Yay, with error handling out of the way, we can focus on the structure
+of the parser itself.
+
+This grammar is simple, so all the parser needs is the underlying
+lexer and the next token stored in a local cache (since we need to
+look-ahead (i.e. "peek") in some context and then actually process the
+token we previously peeked at in some other point in the code).
+
+```rust
 pub struct Parser<'l> {
     lexer: Lexer<'l>,
     next: Option<Token>,
