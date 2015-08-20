@@ -26,26 +26,11 @@ for now I want to stop thinking about parsing and want to
 get to the meat of the exercise as soon as possible.
 
 ```rust
-use std::borrow::{Cow, IntoCow};
-
-#[derive(PartialEq, Eq, Debug)]
-pub struct Ident { name: Cow<'static, str> }
+use std::borrow::{IntoCow};
+use ast::{Ident, Proto, Expr};
 
 fn ident<S:IntoCow<'static, str>>(s: S) -> Ident {
     Ident { name: s.into_cow() }
-}
-
-#[derive(PartialEq, Eq, Debug)]
-pub struct Proto { name: Ident, args: Vec<Ident> }
-
-#[derive(PartialEq, Debug)]
-pub enum Expr {
-    Number(f64),
-    Ident(Ident),
-    Op(char),
-    Def(Proto, Vec<Expr>),
-    Extern(Proto),
-    Combine(Vec<Expr>),
 }
 ```
 

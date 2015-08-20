@@ -25,6 +25,7 @@ pub const EXTERN_PROG: &'static str = r#"
 fn it_works() {
 }
 
+pub mod ast;
 pub mod lexer;
 pub mod parser;
 ```
