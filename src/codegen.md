@@ -29,6 +29,9 @@ pub struct Context<'c> {
 }
 
 impl<'c> Context<'c> {
+    fn get_type<T: Compile<'c>>(&'c self) -> &'c llvm::Type {
+        <T as Compile>::get_type(self.llvm_context)
+    }
     fn with_1_arg<F>(&'c self, e1: &ast::Expr, f: F) -> Result<&'c Value>
         where F: Fn(&'c Builder<'c>, &'c Value) -> &'c Value
     {
@@ -85,7 +88,8 @@ impl Expr {
                 }
                 [Expr::Op('<'), ref e1, ref e2] => {
                     ctxt.with_2_args(e1, e2, |b, v1, v2| {
-                        b.build_cmp(v1, v2, llvm::Predicate::LessThan)
+                        b.build_ui_to_fp(b.build_cmp(v1, v2, llvm::Predicate::LessThan),
+                                         ctxt.get_type::<f32>())
                     })
                 }
                 _ => unimplemented!(),
