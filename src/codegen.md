@@ -28,6 +28,23 @@ pub struct Context<'c> {
     named_values: HashMap<String, &'c Value>,
 }
 
+impl<'c> Context<'c> {
+    fn with_1_arg<F>(&'c self, e1: &ast::Expr, f: F) -> Result<&'c Value>
+        where F: Fn(&'c Builder<'c>, &'c Value) -> &'c Value
+    {
+        let v1 = try!(e1.codegen(self));
+        Ok(f(&self.builder, v1))
+    }
+
+    fn with_2_args<F>(&'c self, e1: &ast::Expr, e2: &ast::Expr, f: F) -> Result<&'c Value>
+        where F: Fn(&'c Builder<'c>, &'c Value, &'c Value) -> &'c Value
+    {
+        let v1 = try!(e1.codegen(self));
+        let v2 = try!(e2.codegen(self));
+        Ok(f(&self.builder, v1, v2))
+    }
+}
+
 impl Expr {
     pub fn codegen<'c>(&self, ctxt: &'c Context<'c>) -> Result<&'c Value> {
         match *self {
@@ -43,48 +60,33 @@ impl Expr {
 
             Expr::Combine(ref exprs) => match &exprs[..] {
                 [Expr::Op('-'), ref e1] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    Ok(ctxt.builder.build_neg(v1))
+                    ctxt.with_1_arg(e1, |b, v1| b.build_neg(v1))
                 }
                 [Expr::Op('!'), ref e1] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    Ok(ctxt.builder.build_not(v1))
+                    ctxt.with_1_arg(e1, |b, v1| b.build_not(v1))
                 }
                 [Expr::Op('+'), ref e1, ref e2] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    let v2 = try!(e2.codegen(ctxt));
-                    Ok(ctxt.builder.build_add(v1, v2))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_add(v1, v2))
                 }
                 [Expr::Op('-'), ref e1, ref e2] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    let v2 = try!(e2.codegen(ctxt));
-                    Ok(ctxt.builder.build_sub(v1, v2))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_sub(v1, v2))
                 }
                 [Expr::Op('*'), ref e1, ref e2] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    let v2 = try!(e2.codegen(ctxt));
-                    Ok(ctxt.builder.build_mul(v1, v2))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_mul(v1, v2))
                 }
                 [Expr::Op('/'), ref e1, ref e2] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    let v2 = try!(e2.codegen(ctxt));
-                    Ok(ctxt.builder.build_mul(v1, v2))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_div(v1, v2))
                 }
                 [Expr::Op('&'), ref e1, ref e2] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    let v2 = try!(e2.codegen(ctxt));
-                    Ok(ctxt.builder.build_and(v1, v2))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_and(v1, v2))
                 }
                 [Expr::Op('|'), ref e1, ref e2] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    let v2 = try!(e2.codegen(ctxt));
-                    Ok(ctxt.builder.build_or(v1, v2))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_or(v1, v2))
                 }
                 [Expr::Op('<'), ref e1, ref e2] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    let v2 = try!(e2.codegen(ctxt));
-                    let vcmp = ctxt.builder.build_cmp(v1, v2, llvm::Predicate::LessThan);
-                    Ok(vcmp)
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| {
+                        b.build_cmp(v1, v2, llvm::Predicate::LessThan)
+                    })
                 }
                 _ => unimplemented!(),
             }
