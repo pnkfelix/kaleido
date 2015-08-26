@@ -1,7 +1,7 @@
 ```rust
 use std::borrow::Cow;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Ident { pub name: Cow<'static, str> }
 
 #[derive(PartialEq, Eq, Debug)]
