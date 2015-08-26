@@ -125,9 +125,14 @@ impl Expr {
 impl ast::Proto {
     pub fn skeleton<'c>(&self, ctxt: &'c Context<'c>) -> &'c mut llvm::Function {
         let double_ty = f64::get_type(ctxt.llvm_context);
-        let arg_tys: Vec<_> = (0..self.args.len()).map(|_| double_ty).collect();
+        let arg_len = self.args.len();
+        let arg_tys: Vec<_> = (0..arg_len).map(|_| double_ty).collect();
         let sig = llvm::Type::new_function(double_ty, &arg_tys[..]);
-        ctxt.module.add_function(&self.name.name, sig)
+        let f = ctxt.module.add_function(&self.name.name, sig);
+        for i in 0..arg_len {
+            f[i].set_name(&self.args[i].name);
+        }
+        f
     }
 }
 ```
