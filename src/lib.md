@@ -1,5 +1,5 @@
 ```rust
-#![feature(into_cow)]
+#![feature(into_cow, slice_patterns)]
 
 extern crate llvm;
 
@@ -25,7 +25,8 @@ pub const EXTERN_PROG: &'static str = r#"
 fn it_works() {
 }
 
-pub mod ast;
 pub mod lexer;
+pub mod ast;
 pub mod parser;
+pub mod codegen;
 ```
