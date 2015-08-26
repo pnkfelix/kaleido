@@ -17,13 +17,24 @@ pub struct CodegenError {
 #[derive(PartialEq, Debug)]
 pub enum CodegenErrorKind {
     Generic(Cow<'static, str>),
-    LookupFailure(ast::Ident),
+    LookupVarFailure(ast::Ident),
+    LookupOpFailure(ast::Ident),
+    ArgMismatch { expect: usize, actual: usize },
+}
+
+fn err<T>(kind: CodegenErrorKind) -> Result<T> {
+    Err(error(kind))
+}
+fn error(kind: CodegenErrorKind) -> CodegenError {
+    CodegenError { kind: kind }
 }
 
 type Builder<'c> = llvm::CSemiBox<'c, llvm::Builder>;
+type Module<'c> = llvm::CSemiBox<'c, llvm::Module>;
 
 pub struct Context<'c> {
     llvm_context: &'c llvm::Context,
+    module: Module<'c>,
     builder: Builder<'c>,
     named_values: HashMap<String, &'c Value>,
 }
@@ -54,9 +65,7 @@ impl Expr {
             Expr::Number(n) => Ok(n.compile(ctxt.llvm_context)),
             Expr::Ident(ref s) => ctxt.named_values.get(&*s.name)
                 .map(|v|*v)
-                .ok_or(CodegenError {
-                    kind: CodegenErrorKind::LookupFailure(s.clone())
-                }),
+                .ok_or(error(CodegenErrorKind::LookupVarFailure(s.clone()))),
             Expr::Op(_) => panic!("operators are not really expressions"),
             Expr::Def(ref _p, ref _body) => unimplemented!(),
             Expr::Extern(ref _p) => unimplemented!(),
@@ -92,9 +101,33 @@ impl Expr {
                                          ctxt.get_type::<f32>())
                     })
                 }
+                [Expr::Ident(ref s), args..] => {
+                    let callee = match ctxt.module.get_function(&*s.name) {
+                        Some(f) => f,
+                        None => return err(CodegenErrorKind::LookupOpFailure(s.clone())),
+                    };
+                    let sig = callee.get_signature();
+                    if sig.num_params() != args.len() {
+                        return err(CodegenErrorKind::ArgMismatch {
+                            expect: sig.num_params(),
+                            actual: args.len() });
+                    }
+                    let actuals: Vec<_> =
+                        try!(args.iter().map(|a|a.codegen(ctxt)).collect());
+                    Ok(ctxt.builder.build_call(callee, &actuals[..]))
+                }
                 _ => unimplemented!(),
             }
         }
+    }
+}
+
+impl ast::Proto {
+    pub fn skeleton<'c>(&self, ctxt: &'c Context<'c>) -> &'c mut llvm::Function {
+        let double_ty = f64::get_type(ctxt.llvm_context);
+        let arg_tys: Vec<_> = (0..self.args.len()).map(|_| double_ty).collect();
+        let sig = llvm::Type::new_function(double_ty, &arg_tys[..]);
+        ctxt.module.add_function(&self.name.name, sig)
     }
 }
 ```
