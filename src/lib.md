@@ -2,6 +2,7 @@
 #![feature(into_cow, slice_patterns)]
 
 extern crate llvm;
+extern crate llvm_sys;
 
 pub const FIB_PROG: &'static str = r#"# Compute the x'th fibonacci number.
 (def fib (x)

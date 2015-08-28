@@ -3,6 +3,7 @@ use ast::{self, Expr};
 
 use llvm::{self, Value};
 use llvm::Compile; // provides `fn compile` and `fn get_type`
+
 use std::borrow::{Cow};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -34,27 +35,54 @@ fn error(kind: CodegenErrorKind) -> CodegenError {
 type Builder<'c> = llvm::CSemiBox<'c, llvm::Builder>;
 type Module<'c> = llvm::CSemiBox<'c, llvm::Module>;
 
-pub struct Context<'c> {
+pub struct ContextState<'c> {
     llvm_context: &'c llvm::Context,
     module: Module<'c>,
     builder: Builder<'c>,
+}
+
+impl<'c> ContextState<'c> {
+    pub fn new(llvm_context: &'c llvm::Context, name: &str) -> ContextState<'c> {
+        ContextState {
+            llvm_context: llvm_context,
+            module: llvm::Module::new(name, llvm_context),
+            builder: llvm::Builder::new(llvm_context),
+        }
+    }
+}
+
+pub struct Context<'c> {
+    llvm_context: &'c llvm::Context,
+    module: &'c Module<'c>,
+    builder: &'c Builder<'c>,
     named_values: RefCell<HashMap<String, &'c Value>>,
 }
 
 impl<'c> Context<'c> {
-    fn get_type<T: Compile<'c>>(&'c self) -> &'c llvm::Type {
+    pub fn from_context_state(ctxt: &'c ContextState<'c>) -> Context<'c> {
+        Context {
+            llvm_context: &ctxt.llvm_context,
+            module: &ctxt.module,
+            builder: &ctxt.builder,
+            named_values: RefCell::new(HashMap::new()),
+        }
+    }
+}
+
+impl<'c> Context<'c> {
+    fn get_type<T: Compile<'c>>(&self) -> &'c llvm::Type {
         <T as Compile>::get_type(self.llvm_context)
     }
-    fn with_1_arg<F>(&'c self,
+    fn with_1_arg<F>(&self,
                      e1: &ast::Expr,
                      f: F) -> Result<&'c Value>
         where F: Fn(&'c Builder<'c>, &'c Value) -> &'c Value
     {
         let v1 = try!(e1.codegen(self));
-        Ok(f(&self.builder, v1))
+        Ok(f(self.builder, v1))
     }
 
-    fn with_2_args<F>(&'c self,
+    fn with_2_args<F>(&self,
                       e1: &ast::Expr,
                       e2: &ast::Expr,
                       f: F) -> Result<&'c Value>
@@ -62,12 +90,12 @@ impl<'c> Context<'c> {
     {
         let v1 = try!(e1.codegen(self));
         let v2 = try!(e2.codegen(self));
-        Ok(f(&self.builder, v1, v2))
+        Ok(f(self.builder, v1, v2))
     }
 }
 
 impl Expr {
-    pub fn codegen<'c>(&self, ctxt: &'c Context<'c>) -> Result<&'c Value> {
+    pub fn codegen<'c>(&self, ctxt: &Context<'c>) -> Result<&'c Value> {
         match *self {
             Expr::Number(n) => Ok(n.compile(ctxt.llvm_context)),
             Expr::Ident(ref s) => ctxt.named_values.borrow_mut().get(&*s.name)
@@ -79,7 +107,8 @@ impl Expr {
 
             Expr::Combine(ref exprs) => match &exprs[..] {
                 [Expr::Op('-'), ref e1] => {
-                    ctxt.with_1_arg(e1, |b, v1| b.build_neg(v1))
+                    let v1 = try!(e1.codegen(ctxt));
+                    Ok(ctxt.builder.build_neg(v1))
                 }
                 [Expr::Op('!'), ref e1] => {
                     ctxt.with_1_arg(e1, |b, v1| b.build_not(v1))
@@ -103,9 +132,10 @@ impl Expr {
                     ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_or(v1, v2))
                 }
                 [Expr::Op('<'), ref e1, ref e2] => {
+                    let t = ctxt.get_type::<f32>();
                     ctxt.with_2_args(e1, e2, |b, v1, v2| {
                         b.build_ui_to_fp(b.build_cmp(v1, v2, llvm::Predicate::LessThan),
-                                         ctxt.get_type::<f32>())
+                                         t)
                     })
                 }
                 [Expr::Ident(ref s), args..] => {
@@ -134,7 +164,7 @@ impl Expr {
 }
 
 impl ast::Proto {
-    pub fn skeleton<'c>(&self, ctxt: &'c Context<'c>) -> &'c mut llvm::Function {
+    pub fn skeleton<'c>(&self, ctxt: &Context<'c>) -> &'c mut llvm::Function {
         let double_ty = f64::get_type(ctxt.llvm_context);
         let arg_len = self.args.len();
         let arg_tys: Vec<_> = (0..arg_len).map(|_| double_ty).collect();
@@ -151,7 +181,7 @@ impl ast::Proto {
 
 fn codegen_def<'c>(p: &ast::Proto,
                    body: &[Expr],
-                   ctxt: &'c Context<'c>) -> Result<&'c Value> {
+                   ctxt: &Context<'c>) -> Result<&'c Value> {
     let arg_len = p.args.len();
     let f: &'c llvm::Function =
         match ctxt.module.get_function(&p.name.name) {
@@ -161,7 +191,10 @@ fn codegen_def<'c>(p: &ast::Proto,
 
     // it would be nice to follow the tutorial's assertion that
     // f.empty() here (to ensure that it was not already defined).
-    assert!(f.get_entry().is_none());
+    //
+    // assert!(f.get_entry().is_none());
+    //
+    // but AFAICT, the functions we create start off with entries.
 
     let bb = f.append("entry");
     ctxt.builder.position_at_end(bb);
@@ -185,8 +218,25 @@ fn codegen_def<'c>(p: &ast::Proto,
     Ok(f)
 }
 
+#[cfg(test)]
+use inputs;
+
 #[test]
 fn dump_ir() {
+    use llvm_sys;
 
+    let llvm_context = llvm::Context::new();
+    let ctxt = ContextState::new(&llvm_context, "kaleido jit");
+    let ctxt = Context::from_context_state(&ctxt);
+
+    // these are definitions so they are included in the dump.
+    inputs::def_id().ast.codegen(&ctxt).ok();
+
+    inputs::def_foo().ast.codegen(&ctxt).ok();
+
+    unsafe {
+        let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
+        llvm_sys::core::LLVMDumpModule(mref);
+    }
 }
 ```
