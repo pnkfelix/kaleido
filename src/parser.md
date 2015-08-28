@@ -363,6 +363,9 @@ but my memory is that the tutorial code was pretty light with respect
 to unit testing.)
 
 ```rust
+#[cfg(test)]
+use inputs::*;
+
 #[test]
 fn parse_empty() {
     let mut input = "".chars();
@@ -396,7 +399,7 @@ fn parse_ident_foo() {
 
 #[test]
 fn parse_extern_foo() {
-    let mut input = " (extern foo ())".chars();
+    let mut input = EXTERN_FOO.chars();
     assert_eq!(Parser::new(&mut input).parse_expr(),
                Ok(Expr::Extern(Proto { name: ident("foo"),
                                        args: vec![] })));
@@ -419,7 +422,7 @@ fn parse_proto() {
 
 #[test]
 fn parse_def_id() {
-    let mut input = " (def id (a) a) ".chars();
+    let mut input = DEF_ID.chars();
     let e = Expr::Def(
         Proto { name: ident("id"), args: vec![ident("a")] },
         vec![Expr::Ident(ident("a"))]);
@@ -476,7 +479,7 @@ fn parse_big_expr() {
 
 #[test]
 fn parse_def_foo() {
-    let mut input = " (def foo (a b) (+ (* a a) (+ (* 2 (* a b)) (* b b)))) ".chars();
+    let mut input = DEF_FOO.chars();
     let e = Expr::Def(
         Proto { name: ident("foo"), args: vec![ident("a"), ident("b")] },
         vec![Expr::Combine(
