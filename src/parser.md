@@ -26,12 +26,7 @@ for now I want to stop thinking about parsing and want to
 get to the meat of the exercise as soon as possible.
 
 ```rust
-use std::borrow::{IntoCow};
-use ast::{Ident, Proto, Expr};
-
-fn ident<S:IntoCow<'static, str>>(s: S) -> Ident {
-    Ident { name: s.into_cow() }
-}
+use ast::{Ident, Proto, Expr, ident};
 ```
 
 Regardless of the structure of the grammar, I want a standard
@@ -212,7 +207,10 @@ impl<'l> Parser<'l> {
             Token::EndOfInput => return err(ParseErrorKind::UnexpectedEndOfInput),
             // Expr     ::= Form
             Token::Char('(') => self.parse_form(),
-            t @ Token::Char(_) => return err(ParseErrorKind::UnexpectedToken(t)),
+            Token::Char(c) => {
+                self.clear_next();
+                Ok(Expr::Op(c))
+            }
         }
     }
 ```
@@ -280,7 +278,8 @@ corresponding to each of the three alternatives.
 `parse_proto` does not need to dispatch.
 
 ```rust
-    fn parse_proto(&mut self, pc: ProtoContext) -> Result<Proto> {
+    fn parse_proto
+(&mut self, pc: ProtoContext) -> Result<Proto> {
         // Proto    ::= Ident Args
         let err = |kind| {
             Err(ParseError { context: ParseContext::ProtoName(pc), kind: kind })
@@ -401,5 +400,104 @@ fn parse_extern_foo() {
     assert_eq!(Parser::new(&mut input).parse_expr(),
                Ok(Expr::Extern(Proto { name: ident("foo"),
                                        args: vec![] })));
+}
+
+#[test]
+fn parse_args() {
+    let mut input = "(a b)".chars();
+    assert_eq!(Parser::new(&mut input).parse_args(),
+               Ok(vec![ident("a"), ident("b")]));
+}
+
+#[test]
+fn parse_proto() {
+    let mut input = "foo (a b)".chars();
+    assert_eq!(Parser::new(&mut input).parse_proto(ProtoContext::Extern),
+               Ok(Proto { name: ident("foo"),
+                          args: vec![ident("a"), ident("b")] }));
+}
+
+#[test]
+fn parse_def_id() {
+    let mut input = " (def id (a) a) ".chars();
+    let e = Expr::Def(
+        Proto { name: ident("id"), args: vec![ident("a")] },
+        vec![Expr::Ident(ident("a"))]);
+    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+}
+
+#[test]
+fn parse_mul() {
+    let mut input = "                                   (* a b)             ".chars();
+    let e = Expr::Combine(vec![Expr::Op('*'),
+                               Expr::Ident(ident("a")),
+                               Expr::Ident(ident("b"))]);
+
+    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+}
+
+#[test]
+fn parse_nested_mul() {
+    let mut input = "                              (* 2 (* a b))            ".chars();
+    let e = Expr::Combine(vec![Expr::Op('*'),
+                               Expr::Number(2.0),
+                               Expr::Combine(vec![Expr::Op('*'),
+                                                  Expr::Ident(ident("a")),
+                                                  Expr::Ident(ident("b"))])]);
+
+    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+}
+
+#[test]
+fn parse_big_expr() {
+    let mut input = "                (+ (* a a) (+ (* 2 (* a b)) (* b b)))  ".chars();
+    let e =
+        Expr::Combine(
+            vec![Expr::Op('+'),
+                 Expr::Combine(
+                     vec![Expr::Op('*'),
+                          Expr::Ident(ident("a")),
+                          Expr::Ident(ident("a"))]),
+                 Expr::Combine(
+                     vec![Expr::Op('+'),
+                          Expr::Combine(
+                              vec![Expr::Op('*'),
+                                   Expr::Number(2.0),
+                                   Expr::Combine(vec![Expr::Op('*'),
+                                                      Expr::Ident(ident("a")),
+                                                      Expr::Ident(ident("b"))])]),
+                          Expr::Combine(
+                              vec![Expr::Op('*'),
+                                   Expr::Ident(ident("b")),
+                                   Expr::Ident(ident("b"))])])]);
+
+    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+}
+
+#[test]
+fn parse_def_foo() {
+    let mut input = " (def foo (a b) (+ (* a a) (+ (* 2 (* a b)) (* b b)))) ".chars();
+    let e = Expr::Def(
+        Proto { name: ident("foo"), args: vec![ident("a"), ident("b")] },
+        vec![Expr::Combine(
+            vec![Expr::Op('+'),
+                 Expr::Combine(
+                     vec![Expr::Op('*'),
+                          Expr::Ident(ident("a")),
+                          Expr::Ident(ident("a"))]),
+                 Expr::Combine(
+                     vec![Expr::Op('+'),
+                          Expr::Combine(
+                              vec![Expr::Op('*'),
+                                   Expr::Number(2.0),
+                                   Expr::Combine(vec![Expr::Op('*'),
+                                                      Expr::Ident(ident("a")),
+                                                      Expr::Ident(ident("b"))])]),
+                          Expr::Combine(
+                              vec![Expr::Op('*'),
+                                   Expr::Ident(ident("b")),
+                                   Expr::Ident(ident("b"))])])])]);
+
+    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
 }
 ```

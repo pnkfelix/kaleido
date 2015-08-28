@@ -4,6 +4,7 @@ use ast::{self, Expr};
 use llvm::{self, Value};
 use llvm::Compile; // provides `fn compile` and `fn get_type`
 use std::borrow::{Cow};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::result::Result as StdResult;
 
@@ -20,6 +21,7 @@ pub enum CodegenErrorKind {
     LookupVarFailure(ast::Ident),
     LookupOpFailure(ast::Ident),
     ArgMismatch { expect: usize, actual: usize },
+    EmptyBody,
 }
 
 fn err<T>(kind: CodegenErrorKind) -> Result<T> {
@@ -36,21 +38,26 @@ pub struct Context<'c> {
     llvm_context: &'c llvm::Context,
     module: Module<'c>,
     builder: Builder<'c>,
-    named_values: HashMap<String, &'c Value>,
+    named_values: RefCell<HashMap<String, &'c Value>>,
 }
 
 impl<'c> Context<'c> {
     fn get_type<T: Compile<'c>>(&'c self) -> &'c llvm::Type {
         <T as Compile>::get_type(self.llvm_context)
     }
-    fn with_1_arg<F>(&'c self, e1: &ast::Expr, f: F) -> Result<&'c Value>
+    fn with_1_arg<F>(&'c self,
+                     e1: &ast::Expr,
+                     f: F) -> Result<&'c Value>
         where F: Fn(&'c Builder<'c>, &'c Value) -> &'c Value
     {
         let v1 = try!(e1.codegen(self));
         Ok(f(&self.builder, v1))
     }
 
-    fn with_2_args<F>(&'c self, e1: &ast::Expr, e2: &ast::Expr, f: F) -> Result<&'c Value>
+    fn with_2_args<F>(&'c self,
+                      e1: &ast::Expr,
+                      e2: &ast::Expr,
+                      f: F) -> Result<&'c Value>
         where F: Fn(&'c Builder<'c>, &'c Value, &'c Value) -> &'c Value
     {
         let v1 = try!(e1.codegen(self));
@@ -63,11 +70,11 @@ impl Expr {
     pub fn codegen<'c>(&self, ctxt: &'c Context<'c>) -> Result<&'c Value> {
         match *self {
             Expr::Number(n) => Ok(n.compile(ctxt.llvm_context)),
-            Expr::Ident(ref s) => ctxt.named_values.get(&*s.name)
+            Expr::Ident(ref s) => ctxt.named_values.borrow_mut().get(&*s.name)
                 .map(|v|*v)
                 .ok_or(error(CodegenErrorKind::LookupVarFailure(s.clone()))),
             Expr::Op(_) => panic!("operators are not really expressions"),
-            Expr::Def(ref _p, ref _body) => unimplemented!(),
+            Expr::Def(ref p, ref body) => codegen_def(p, body, ctxt),
             Expr::Extern(ref _p) => unimplemented!(),
 
             Expr::Combine(ref exprs) => match &exprs[..] {
@@ -112,8 +119,12 @@ impl Expr {
                             expect: sig.num_params(),
                             actual: args.len() });
                     }
-                    let actuals: Vec<_> =
-                        try!(args.iter().map(|a|a.codegen(ctxt)).collect());
+                    // let actuals: Vec<_> =
+                    //     try!(args.iter().map(|a|a.codegen(ctxt)).collect());
+                    let mut actuals = Vec::new();
+                    for a in args {
+                        actuals.push(try!(a.codegen(ctxt)));
+                    }
                     Ok(ctxt.builder.build_call(callee, &actuals[..]))
                 }
                 _ => unimplemented!(),
@@ -128,11 +139,54 @@ impl ast::Proto {
         let arg_len = self.args.len();
         let arg_tys: Vec<_> = (0..arg_len).map(|_| double_ty).collect();
         let sig = llvm::Type::new_function(double_ty, &arg_tys[..]);
+
         let f = ctxt.module.add_function(&self.name.name, sig);
         for i in 0..arg_len {
             f[i].set_name(&self.args[i].name);
         }
+
         f
     }
+}
+
+fn codegen_def<'c>(p: &ast::Proto,
+                   body: &[Expr],
+                   ctxt: &'c Context<'c>) -> Result<&'c Value> {
+    let arg_len = p.args.len();
+    let f: &'c llvm::Function =
+        match ctxt.module.get_function(&p.name.name) {
+            None => p.skeleton(ctxt),
+            Some(f) => f,
+        };
+
+    // it would be nice to follow the tutorial's assertion that
+    // f.empty() here (to ensure that it was not already defined).
+    assert!(f.get_entry().is_none());
+
+    let bb = f.append("entry");
+    ctxt.builder.position_at_end(bb);
+    ctxt.named_values.borrow_mut().clear();
+    for i in 0..arg_len {
+        let arg = &f[i];
+        ctxt.named_values
+            .borrow_mut()
+            .insert(arg.get_name().unwrap().to_owned(), arg);
+    }
+    let mut ret_val = None;
+    for b in body {
+        ret_val = Some(try!(b.codegen(ctxt)));
+    }
+
+    match ret_val {
+        Some(ret_val) => ctxt.builder.build_ret(ret_val),
+        None => return err(CodegenErrorKind::EmptyBody),
+    };
+
+    Ok(f)
+}
+
+#[test]
+fn dump_ir() {
+
 }
 ```
