@@ -364,7 +364,16 @@ to unit testing.)
 
 ```rust
 #[cfg(test)]
-use inputs::*;
+use inputs;
+
+#[cfg(test)]
+impl inputs::Input {
+    fn check(&self) {
+        let mut input = self.str.chars();
+        assert_eq!(Parser::new(&mut input).parse_expr().as_ref(),
+                   Ok(&self.ast));
+    }
+}
 
 #[test]
 fn parse_empty() {
@@ -399,10 +408,7 @@ fn parse_ident_foo() {
 
 #[test]
 fn parse_extern_foo() {
-    let mut input = EXTERN_FOO.chars();
-    assert_eq!(Parser::new(&mut input).parse_expr(),
-               Ok(Expr::Extern(Proto { name: ident("foo"),
-                                       args: vec![] })));
+    inputs::extern_foo().check();
 }
 
 #[test]
@@ -422,85 +428,26 @@ fn parse_proto() {
 
 #[test]
 fn parse_def_id() {
-    let mut input = DEF_ID.chars();
-    let e = Expr::Def(
-        Proto { name: ident("id"), args: vec![ident("a")] },
-        vec![Expr::Ident(ident("a"))]);
-    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+    inputs::def_id().check();
 }
 
 #[test]
 fn parse_mul() {
-    let mut input = "                                   (* a b)             ".chars();
-    let e = Expr::Combine(vec![Expr::Op('*'),
-                               Expr::Ident(ident("a")),
-                               Expr::Ident(ident("b"))]);
-
-    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+    inputs::expr_mul().check();
 }
 
 #[test]
 fn parse_nested_mul() {
-    let mut input = "                              (* 2 (* a b))            ".chars();
-    let e = Expr::Combine(vec![Expr::Op('*'),
-                               Expr::Number(2.0),
-                               Expr::Combine(vec![Expr::Op('*'),
-                                                  Expr::Ident(ident("a")),
-                                                  Expr::Ident(ident("b"))])]);
-
-    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+    inputs::expr_nested_mul().check();
 }
 
 #[test]
 fn parse_big_expr() {
-    let mut input = "                (+ (* a a) (+ (* 2 (* a b)) (* b b)))  ".chars();
-    let e =
-        Expr::Combine(
-            vec![Expr::Op('+'),
-                 Expr::Combine(
-                     vec![Expr::Op('*'),
-                          Expr::Ident(ident("a")),
-                          Expr::Ident(ident("a"))]),
-                 Expr::Combine(
-                     vec![Expr::Op('+'),
-                          Expr::Combine(
-                              vec![Expr::Op('*'),
-                                   Expr::Number(2.0),
-                                   Expr::Combine(vec![Expr::Op('*'),
-                                                      Expr::Ident(ident("a")),
-                                                      Expr::Ident(ident("b"))])]),
-                          Expr::Combine(
-                              vec![Expr::Op('*'),
-                                   Expr::Ident(ident("b")),
-                                   Expr::Ident(ident("b"))])])]);
-
-    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+    inputs::expr_big().check();
 }
 
 #[test]
 fn parse_def_foo() {
-    let mut input = DEF_FOO.chars();
-    let e = Expr::Def(
-        Proto { name: ident("foo"), args: vec![ident("a"), ident("b")] },
-        vec![Expr::Combine(
-            vec![Expr::Op('+'),
-                 Expr::Combine(
-                     vec![Expr::Op('*'),
-                          Expr::Ident(ident("a")),
-                          Expr::Ident(ident("a"))]),
-                 Expr::Combine(
-                     vec![Expr::Op('+'),
-                          Expr::Combine(
-                              vec![Expr::Op('*'),
-                                   Expr::Number(2.0),
-                                   Expr::Combine(vec![Expr::Op('*'),
-                                                      Expr::Ident(ident("a")),
-                                                      Expr::Ident(ident("b"))])]),
-                          Expr::Combine(
-                              vec![Expr::Op('*'),
-                                   Expr::Ident(ident("b")),
-                                   Expr::Ident(ident("b"))])])])]);
-
-    assert_eq!(Parser::new(&mut input).parse_expr(), Ok(e));
+    inputs::def_foo().check();
 }
 ```
