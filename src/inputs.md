@@ -27,7 +27,7 @@ macro_rules! args { [$($e:expr),*] => { vec![$($e.to_expr()),*] } }
 fn abc() -> (Ident, Ident, Ident) { (ident("a"), ident("b"), ident("c")) }
 
 inputs!
-([COLLECTED; 10] =
+([COLLECTED; 11] =
 
  fn extern_foo {
      " (extern foo0 ())",
@@ -52,6 +52,13 @@ inputs!
      Expr::Def(
          Proto { name: ident("one_two_x_lft"), args: vec![ident("z")] },
          vec![add(add(1.0, 2.0), "z")])
+ }
+
+ fn def_one_two_x_times_x_two_one {
+     " (def one_two_x_times_x_two_one (x) (* (+ (+ 1 2) x) (+ x (+ 1 2)))) ",
+     Expr::Def(
+         Proto { name: ident("one_two_x_times_x_two_one"), args: vec![ident("x")] },
+         vec![mul(add(add(1.0, 2.0), "x"), add("x", add(1.0, 2.0)))])
  }
 
  fn def_discrim {
