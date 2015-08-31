@@ -103,12 +103,10 @@ impl Expr {
                 .ok_or(error(CodegenErrorKind::LookupVarFailure(s.clone()))),
             Expr::Op(_) => panic!("operators are not really expressions"),
             Expr::Def(ref p, ref body) => codegen_def(p, body, ctxt),
-            Expr::Extern(ref _p) => unimplemented!(),
-
+            Expr::Extern(ref p) => codegen_extern(p, ctxt),
             Expr::Combine(ref exprs) => match &exprs[..] {
                 [Expr::Op('-'), ref e1] => {
-                    let v1 = try!(e1.codegen(ctxt));
-                    Ok(ctxt.builder.build_neg(v1))
+                    ctxt.with_1_arg(e1, |b, v1| b.build_neg(v1))
                 }
                 [Expr::Op('!'), ref e1] => {
                     ctxt.with_1_arg(e1, |b, v1| b.build_not(v1))
@@ -179,6 +177,17 @@ impl ast::Proto {
     }
 }
 
+fn codegen_extern<'c>(p: &ast::Proto,
+                      ctxt: &Context<'c>) -> Result<&'c Value> {
+    let arg_len = p.args.len();
+    let f: &'c llvm::Function =
+        match ctxt.module.get_function(&p.name.name) {
+            None => p.skeleton(ctxt),
+            Some(f) => f,
+        };
+    Ok(f)
+}
+
 fn codegen_def<'c>(p: &ast::Proto,
                    body: &[Expr],
                    ctxt: &Context<'c>) -> Result<&'c Value> {
@@ -230,9 +239,12 @@ fn dump_ir() {
     let ctxt = Context::from_context_state(&ctxt);
 
     // these are definitions so they are included in the dump.
-    inputs::def_id().ast.codegen(&ctxt).ok();
+    inputs::def_id().ast.codegen(&ctxt).unwrap();
 
-    inputs::def_foo().ast.codegen(&ctxt).ok();
+    inputs::def_foo().ast.codegen(&ctxt).unwrap();
+
+    inputs::def_discrim().ast.codegen(&ctxt).unwrap();
+    inputs::def_quad_root_a().ast.codegen(&ctxt).unwrap();
 
     unsafe {
         let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
