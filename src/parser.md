@@ -407,6 +407,13 @@ fn parse_ident_foo() {
 }
 
 #[test]
+fn parse_ident_foo_bar() {
+    let mut input = " foo_bar ".chars();
+    assert_eq!(Parser::new(&mut input).parse_expr(),
+               Ok(Expr::Ident(ident("foo_bar"))));
+}
+
+#[test]
 fn parse_extern_foo() {
     inputs::extern_foo().check();
 }
@@ -427,27 +434,23 @@ fn parse_proto() {
 }
 
 #[test]
-fn parse_def_id() {
-    inputs::def_id().check();
-}
+fn parse_def_id() { inputs::def_id().check(); }
 
 #[test]
-fn parse_mul() {
-    inputs::expr_mul().check();
-}
+fn parse_mul() { inputs::expr_mul().check(); }
 
 #[test]
-fn parse_nested_mul() {
-    inputs::expr_nested_mul().check();
-}
+fn parse_nested_mul() { inputs::expr_nested_mul().check(); }
 
 #[test]
-fn parse_big_expr() {
-    inputs::expr_big().check();
-}
+fn parse_big_expr() { inputs::expr_big().check(); }
 
 #[test]
-fn parse_def_foo() {
-    inputs::def_foo().check();
-}
+fn parse_def_foo() { inputs::def_foo().check(); }
+
+#[test]
+fn parse_def_discrim() { inputs::def_discrim().check(); }
+
+#[test]
+fn parse_def_quad_root_a() { inputs::def_quad_root_a().check(); }
 ```
