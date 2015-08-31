@@ -48,7 +48,7 @@ pub fn def_quad_root_a() -> Input {
             Proto { name: ident("quad_root_a"), args: abc.clone() },
             vec![
                 Expr::Extern(Proto { name: ident("sqrt"), args: vec![a.clone()] }),
-                Expr::Extern(Proto { name: ident("discrim"), args: vec![a.clone()] }),
+                Expr::Extern(Proto { name: ident("discrim"), args: abc.clone(), }),
                 div(add(neg(b.clone()), Expr::Combine(
                     args!["sqrt", Expr::Combine(args!["discrim", a, b, c])])),
                     mul(2.0, a))])
