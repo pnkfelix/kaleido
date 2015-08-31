@@ -235,7 +235,9 @@ the appropriate token for that string when it does.
                 identifier_str.push(c);
                 loop {
                     if let LastChar::Char(c) = l.get_char() {
-                        if c.is_digit(10) || c.is_alphabetic() {
+                        if c.is_digit(10) ||
+                            c.is_alphabetic() ||
+                            ['_'].contains(&c) {
                             identifier_str.push(c);
                         } else {
                             break;
@@ -352,6 +354,18 @@ fn lexsess_ws_extern_ws() {
 fn lexsess_ws_ident() {
     assert_eq!(LexerSession::new(&mut "   ident ".chars()).get_tok().1,
                Token::Identifier(Cow::Borrowed("ident")));
+}
+
+#[test]
+fn lexsess_ws_ident_with_digit() {
+    assert_eq!(LexerSession::new(&mut "   id3nt ".chars()).get_tok().1,
+               Token::Identifier(Cow::Borrowed("id3nt")));
+}
+
+#[test]
+fn lexsess_ws_ident_with_underscore() {
+    assert_eq!(LexerSession::new(&mut "   id_nt ".chars()).get_tok().1,
+               Token::Identifier(Cow::Borrowed("id_nt")));
 }
 
 #[test]
