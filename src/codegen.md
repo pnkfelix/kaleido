@@ -246,12 +246,15 @@ fn dump_ir() {
     let ctxt = Context::from_context_state(&ctxt);
 
     // these are definitions so they are included in the dump.
-    inputs::def_id().ast.codegen(&ctxt).unwrap();
-
-    inputs::def_foo().ast.codegen(&ctxt).unwrap();
-
-    inputs::def_discrim().ast.codegen(&ctxt).unwrap();
-    inputs::def_quad_root_a().ast.codegen(&ctxt).unwrap();
+    for i in &inputs::COLLECTED {
+        let i = i();
+        match i.ast.codegen(&ctxt) {
+            Ok(_) => {}
+            Err(e) => {
+                panic!("error {:?} when compiling input {}", e, i.str);
+            }
+        }
+    }
 
     unsafe {
         let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
