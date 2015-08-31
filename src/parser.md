@@ -414,11 +414,6 @@ fn parse_ident_foo_bar() {
 }
 
 #[test]
-fn parse_extern_foo() {
-    inputs::extern_foo().check();
-}
-
-#[test]
 fn parse_args() {
     let mut input = "(a b)".chars();
     assert_eq!(Parser::new(&mut input).parse_args(),
@@ -434,23 +429,10 @@ fn parse_proto() {
 }
 
 #[test]
-fn parse_def_id() { inputs::def_id().check(); }
-
-#[test]
-fn parse_mul() { inputs::expr_mul().check(); }
-
-#[test]
-fn parse_nested_mul() { inputs::expr_nested_mul().check(); }
-
-#[test]
-fn parse_big_expr() { inputs::expr_big().check(); }
-
-#[test]
-fn parse_def_foo() { inputs::def_foo().check(); }
-
-#[test]
-fn parse_def_discrim() { inputs::def_discrim().check(); }
-
-#[test]
-fn parse_def_quad_root_a() { inputs::def_quad_root_a().check(); }
+fn parse_check_inputs() {
+    for i in &inputs::COLLECTED {
+        let i = i();
+        i.check();
+    }
+}
 ```
