@@ -22,6 +22,7 @@ pub enum CodegenErrorKind {
     LookupVarFailure(ast::Ident),
     LookupOpFailure(ast::Ident),
     ArgMismatch { expect: usize, actual: usize },
+    FunctionRedefinition,
     EmptyBody,
 }
 
@@ -205,12 +206,9 @@ fn codegen_def<'c>(p: &ast::Proto,
     let f = try!(lookup_or_generate_function(p, ctxt));
     let arg_len = p.args.len();
 
-    // it would be nice to follow the tutorial's assertion that
-    // f.empty() here (to ensure that it was not already defined).
-    //
-    // assert!(f.get_entry().is_none());
-    //
-    // but AFAICT, the functions we create start off with entries.
+    if !f.empty() {
+        return err(CodegenErrorKind::FunctionRedefinition);
+    }
 
     let bb = f.append("entry");
     ctxt.builder.position_at_end(bb);
