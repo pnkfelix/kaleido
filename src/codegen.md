@@ -177,26 +177,33 @@ impl ast::Proto {
     }
 }
 
-fn codegen_extern<'c>(p: &ast::Proto,
-                      ctxt: &Context<'c>) -> Result<&'c Value> {
+fn lookup_or_generate_function<'c>(p: &ast::Proto,
+                                   ctxt: &Context<'c>) -> Result<&'c llvm::Function> {
     let arg_len = p.args.len();
     let f: &'c llvm::Function =
         match ctxt.module.get_function(&p.name.name) {
             None => p.skeleton(ctxt),
             Some(f) => f,
         };
-    Ok(f)
+    let actual_len = f.get_signature().num_params();
+    if actual_len == arg_len {
+        Ok(f)
+    } else {
+        err(CodegenErrorKind::ArgMismatch { expect: arg_len,
+                                            actual: actual_len, })
+    }
+}
+
+fn codegen_extern<'c>(p: &ast::Proto,
+                      ctxt: &Context<'c>) -> Result<&'c Value> {
+    Ok(try!(lookup_or_generate_function(p, ctxt)))
 }
 
 fn codegen_def<'c>(p: &ast::Proto,
                    body: &[Expr],
                    ctxt: &Context<'c>) -> Result<&'c Value> {
+    let f = try!(lookup_or_generate_function(p, ctxt));
     let arg_len = p.args.len();
-    let f: &'c llvm::Function =
-        match ctxt.module.get_function(&p.name.name) {
-            None => p.skeleton(ctxt),
-            Some(f) => f,
-        };
 
     // it would be nice to follow the tutorial's assertion that
     // f.empty() here (to ensure that it was not already defined).
