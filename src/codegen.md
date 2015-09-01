@@ -4,6 +4,9 @@ use ast::{self, Expr};
 use llvm::{self, Value};
 use llvm::Compile; // provides `fn compile` and `fn get_type`
 
+use llvm_ext::Builder as BuilderExt;
+use llvm_ext::Function as FunctionExt;
+
 use std::borrow::{Cow};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -238,6 +241,7 @@ use inputs;
 #[test]
 fn dump_ir() {
     use llvm_sys;
+    use llvm::CastFrom; // provides `fn cast`
 
     let llvm_context = llvm::Context::new();
     let ctxt = ContextState::new(&llvm_context, "kaleido jit");
@@ -247,7 +251,30 @@ fn dump_ir() {
     for i in &inputs::COLLECTED {
         let i = i();
         match i.ast.codegen(&ctxt) {
-            Ok(_) => {}
+            Ok(v) => {
+                let t = v.get_type();
+                // this guard is to work around a presumed bug
+                // where `CastFrom for Function` is a little too
+                // eager to invoke `ty.get_element()`.
+                if !(t.is_function() || t.is_pointer()) {
+                    continue;
+                }
+                if let Some(f) = llvm::Function::cast(v) {
+                    if f.empty() {
+                        continue;
+                    }
+                    match f.verify() {
+                        Ok(()) => {}
+                        Err(()) => {
+                            unsafe {
+                                let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
+                                llvm_sys::core::LLVMDumpModule(mref);
+                            }
+                            panic!("error in verify when compiling input {}", i.str);
+                        }
+                    }
+                }
+            }
             Err(e) => {
                 panic!("error {:?} when compiling input {}", e, i.str);
             }

@@ -3,6 +3,7 @@
 
 extern crate llvm;
 extern crate llvm_sys;
+extern crate llvm_ext;
 
 pub const FIB_PROG: &'static str = r#"# Compute the x'th fibonacci number.
 (def fib (x)

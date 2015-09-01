@@ -27,7 +27,7 @@ macro_rules! args { [$($e:expr),*] => { vec![$($e.to_expr()),*] } }
 fn abc() -> (Ident, Ident, Ident) { (ident("a"), ident("b"), ident("c")) }
 
 inputs!
-([COLLECTED; 11] =
+([COLLECTED; 12] =
 
  fn extern_foo {
      " (extern foo0 ())",
@@ -68,6 +68,13 @@ inputs!
            Proto { name: ident("discrim"),
                    args: vec![a.clone(), b.clone(), c.clone()] },
            vec![sub(mul(b.clone(),b), mul(4.0, mul(a, c)))]) }
+ }
+
+ fn sequence {
+     "(def sequence () 1.0 2.0 3.0)",
+     Expr::Def(
+         Proto { name: ident("sequence"), args: vec![] },
+         args![1.0, 2.0, 3.0])
  }
 
  fn def_quad_root_a {
