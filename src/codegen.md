@@ -110,7 +110,12 @@ impl Expr {
             Expr::Extern(ref p) => codegen_extern(p, ctxt),
             Expr::Combine(ref exprs) => match &exprs[..] {
                 [Expr::Op('-'), ref e1] => {
-                    ctxt.with_1_arg(e1, |b, v1| b.build_neg(v1))
+                    // https://github.com/TomBebbington/llvm-rs/issues/3
+                    // `build_neg` will only work for integer inputs
+                    // so we resort to `build_sub` instead.
+                    ctxt.with_1_arg(e1, |b, v1| b.build_sub(
+                        (0.0).compile(ctxt.llvm_context),
+                        v1))
                 }
                 [Expr::Op('!'), ref e1] => {
                     ctxt.with_1_arg(e1, |b, v1| b.build_not(v1))
