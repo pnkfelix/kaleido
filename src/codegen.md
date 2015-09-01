@@ -265,12 +265,12 @@ fn dump_ir() {
                     }
                     match f.verify() {
                         Ok(()) => {}
-                        Err(()) => {
+                        Err(s) => {
                             unsafe {
                                 let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
                                 llvm_sys::core::LLVMDumpModule(mref);
                             }
-                            panic!("error in verify when compiling input {}", i.str);
+                            panic!("error {} in verify when compiling input {}", s, i.str);
                         }
                     }
                 }
