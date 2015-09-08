@@ -244,14 +244,10 @@ fn codegen_def<'c>(p: &ast::Proto,
 use inputs;
 
 #[cfg(test)]
-fn with_codegened_inputs<CF, C>(each_f: CF, finally: C)
+fn with_codegened_inputs<CF, C>(ctxt: Context, each_f: CF, finally: C)
     where CF: Fn(&Context, &inputs::Input, &llvm::Function), C: Fn(&Context)
 {
     use llvm::CastFrom; // provides `fn cast`
-
-    let llvm_context = llvm::Context::new();
-    let ctxt = ContextState::new(&llvm_context, "kaleido jit");
-    let ctxt = Context::from_context_state(&ctxt);
 
     // these are definitions so they are included in the dump.
     for i in &inputs::COLLECTED {
@@ -281,7 +277,11 @@ fn with_codegened_inputs<CF, C>(each_f: CF, finally: C)
 #[test]
 fn dump_ir() {
     use llvm_sys;
-    with_codegened_inputs(|ctxt, i, f| {
+    let llvm_context = llvm::Context::new();
+    let ctxt = ContextState::new(&llvm_context, "kaleido jit");
+    let ctxt = Context::from_context_state(&ctxt);
+
+    with_codegened_inputs(ctxt, |ctxt, i, f| {
         if f.empty() {
             return;
         }
@@ -299,6 +299,50 @@ fn dump_ir() {
         unsafe {
             let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
             llvm_sys::core::LLVMDumpModule(mref);
+        }
+    });
+}
+
+
+#[test]
+fn dump_optimized_ir() {
+    use llvm_sys;
+    use llvm_ext::FunctionPassManager;
+
+    let llvm_context = llvm::Context::new();
+    let ctxt = ContextState::new(&llvm_context, "kaleido jit");
+    let ctxt = Context::from_context_state(&ctxt);
+
+    let fpm = FunctionPassManager::new(ctxt.module);
+    fpm.add_basic_alias_analysis_pass();
+    fpm.add_instruction_combining_pass();
+    fpm.add_reassociate_pass();
+    fpm.add_gvn_pass();
+    fpm.add_cfg_simplification_pass();
+
+    fpm.do_initialization();
+
+    with_codegened_inputs(ctxt, |ctxt, i, f| {
+        if f.empty() {
+            return;
+        }
+        match f.verify() {
+            Ok(()) => {}
+            Err(s) => {
+                unsafe {
+                    let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
+                    llvm_sys::core::LLVMDumpModule(mref);
+                }
+                panic!("error {} in verify when compiling input {}", s, i.str);
+            }
+        }
+
+        fpm.run(f);
+
+    }, |ctxt| {
+        unsafe {
+            let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
+           llvm_sys::core::LLVMDumpModule(mref);
         }
     });
 }
