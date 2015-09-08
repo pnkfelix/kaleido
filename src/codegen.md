@@ -36,8 +36,8 @@ fn error(kind: CodegenErrorKind) -> CodegenError {
     CodegenError { kind: kind }
 }
 
-type Builder<'c> = llvm::CSemiBox<'c, llvm::Builder>;
-type Module<'c> = llvm::CSemiBox<'c, llvm::Module>;
+pub type Builder<'c> = llvm::CSemiBox<'c, llvm::Builder>;
+pub type Module<'c> = llvm::CSemiBox<'c, llvm::Module>;
 
 pub struct ContextState<'c> {
     llvm_context: &'c llvm::Context,
@@ -56,10 +56,10 @@ impl<'c> ContextState<'c> {
 }
 
 pub struct Context<'c> {
-    llvm_context: &'c llvm::Context,
-    module: &'c Module<'c>,
-    builder: &'c Builder<'c>,
-    named_values: RefCell<HashMap<String, &'c Value>>,
+    pub llvm_context: &'c llvm::Context,
+    pub module: &'c Module<'c>,
+    pub builder: &'c Builder<'c>,
+    pub named_values: RefCell<HashMap<String, &'c Value>>,
 }
 
 impl<'c> Context<'c> {
@@ -243,9 +243,10 @@ fn codegen_def<'c>(p: &ast::Proto,
 #[cfg(test)]
 use inputs;
 
-#[test]
-fn dump_ir() {
-    use llvm_sys;
+#[cfg(test)]
+fn with_codegened_inputs<CF, C>(each_f: CF, finally: C)
+    where CF: Fn(&Context, &inputs::Input, &llvm::Function), C: Fn(&Context)
+{
     use llvm::CastFrom; // provides `fn cast`
 
     let llvm_context = llvm::Context::new();
@@ -265,19 +266,7 @@ fn dump_ir() {
                     continue;
                 }
                 if let Some(f) = llvm::Function::cast(v) {
-                    if f.empty() {
-                        continue;
-                    }
-                    match f.verify() {
-                        Ok(()) => {}
-                        Err(s) => {
-                            unsafe {
-                                let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
-                                llvm_sys::core::LLVMDumpModule(mref);
-                            }
-                            panic!("error {} in verify when compiling input {}", s, i.str);
-                        }
-                    }
+                    each_f(&ctxt, &i, f);
                 }
             }
             Err(e) => {
@@ -286,9 +275,31 @@ fn dump_ir() {
         }
     }
 
-    unsafe {
-        let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
-        llvm_sys::core::LLVMDumpModule(mref);
-    }
+    finally(&ctxt);
+}
+
+#[test]
+fn dump_ir() {
+    use llvm_sys;
+    with_codegened_inputs(|ctxt, i, f| {
+        if f.empty() {
+            return;
+        }
+        match f.verify() {
+            Ok(()) => {}
+            Err(s) => {
+                unsafe {
+                    let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
+                    llvm_sys::core::LLVMDumpModule(mref);
+                }
+                panic!("error {} in verify when compiling input {}", s, i.str);
+            }
+        }
+    }, |ctxt| {
+        unsafe {
+            let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
+            llvm_sys::core::LLVMDumpModule(mref);
+        }
+    });
 }
 ```
