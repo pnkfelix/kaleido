@@ -27,7 +27,17 @@ macro_rules! args { [$($e:expr),*] => { vec![$($e.to_expr()),*] } }
 fn abc() -> (Ident, Ident, Ident) { (ident("a"), ident("b"), ident("c")) }
 
 inputs!
-([COLLECTED; 12] =
+([COLLECTED; 14] =
+
+ fn three {
+     " 3 ",
+     Expr::Number(3.0)
+ }
+
+ fn one_plus_two {
+     " (+ 1 2) ",
+     add(1.0, 2.0)
+ }
 
  fn extern_foo {
      " (extern foo0 ())",
