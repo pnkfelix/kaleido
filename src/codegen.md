@@ -346,4 +346,129 @@ fn dump_optimized_ir() {
         }
     });
 }
+
+#[test]
+fn demo_fib() {
+    use llvm::Attribute::*;
+    use llvm::ExecutionEngine; // provides `JitEngine::new` etc
+
+    let ctx = llvm::Context::new();
+    let module = llvm::Module::new("simple", &ctx);
+    let func = module.add_function(
+        "fib", llvm::Type::get::<fn(u64) -> u64>(&ctx));
+    func.add_attributes(&[NoUnwind, ReadNone]);
+    let value = &func[0];
+    let entry = func.append("entry");
+    let on_zero = func.append("on_zero");
+    let on_one = func.append("on_one");
+    let default = func.append("default");
+    let builder = llvm::Builder::new(&ctx);
+    let zero = 0u64.compile(&ctx);
+    let one = 1u64.compile(&ctx);
+    builder.position_at_end(entry);
+    builder.build_switch(value, default, &[
+        (zero, on_zero),
+        (one, on_one)
+    ]);
+    builder.position_at_end(on_zero);
+    builder.build_ret(zero);
+    builder.position_at_end(on_one);
+    builder.build_ret(one);
+    builder.position_at_end(default);
+    let two = 2u64.compile(&ctx);
+    let a = builder.build_sub(value, one);
+    let b = builder.build_sub(value, two);
+    let fa = builder.build_tail_call(func, &[a]);
+    let fb = builder.build_tail_call(func, &[b]);
+    builder.build_ret(builder.build_add(fa, fb));
+    module.verify().unwrap();
+    let ee = llvm::JitEngine::new(
+        &module, llvm::JitOptions {opt_level: 0}).unwrap();
+    ee.with_function(func, |fib: extern fn(u64) -> u64| {
+        for i in 0..10 {
+            println!("fib {} = {}", i, fib(i))
+        }
+    });
+}
+
+#[test]
+fn demo_three() {
+    use llvm::Attribute::*;
+    use llvm::ExecutionEngine; // provides `JitEngine::new` etc
+
+    let ctx = llvm::Context::new();
+    let module = llvm::Module::new("simple", &ctx);
+    type N = u64;
+    type T = extern "C" fn(N) -> N;
+    let func = module.add_function(
+        "fib", llvm::Type::get::<T>(&ctx));
+    func.add_attributes(&[NoUnwind, ReadNone]);
+    let entry = func.append("entry");
+    let builder = llvm::Builder::new(&ctx);
+    fn n(x: N) -> N { x }
+    let three_r = n(3 as N).compile(&ctx);
+    builder.position_at_end(entry);
+    builder.build_ret(three_r);
+    module.verify().unwrap();
+    let ee = llvm::JitEngine::new(
+        &module, llvm::JitOptions {opt_level: 0}).unwrap();
+    ee.with_function(func, |fib: T| {
+        for i in 0..10 {
+            println!("thr {} = {}", i, fib(0 as N))
+        }
+    });
+}
+
+#[cfg(not_now)]
+#[test]
+fn demo_mcjit() {
+    use llvm_sys;
+    use llvm::CastFrom; // provides `fn cast`
+    use llvm::ExecutionEngine; // provides `JitEngine::new` etc
+    use llvm::Attribute::*;
+
+    // let llvm_context = llvm::Context::new();
+    // let ctxt = ContextState::new(&llvm_context, "kaleido jit");
+    // let ctxt = Context::from_context_state(&ctxt);
+
+    // these are definitions so they are included in the dump.
+    for i in &inputs::COLLECTED {
+        let inputs::Input { ast: i_ast, str: i_str } = i();
+        let e = match i_ast {
+            ast::Expr::Def(..) | ast::Expr::Extern(..) => continue,
+            e => e,
+        };
+        let llvm_context = llvm::Context::new();
+        let ctxt = ContextState::new(&llvm_context, "fresh_ctxt");
+        let ctxt = Context::from_context_state(&ctxt);
+        let module = ctxt.module;
+        type T = extern "C" fn(f64) -> f64;
+        let func = module.add_function(
+            "fresh_fun",
+            llvm::Type::get::<T>(&ctxt.llvm_context));
+        func.add_attributes(&[NoUnwind, ReadNone]);
+        match 3 /* e.codegen(&ctxt) */ {
+            3 => {
+                println!("i: {}", i_str);
+                let entry = func.append("entry");
+                let builder = llvm::Builder::new(ctxt.llvm_context);
+                // let builder = ctxt.builder;
+                let v = (3.0).compile(&ctxt.llvm_context);
+                builder.position_at_end(entry);
+                builder.build_ret(v);
+                module.verify().unwrap();
+                let jit = llvm::JitEngine::new(
+                    module, llvm::JitOptions { opt_level: 0, }).unwrap();
+                println!("with_function");
+                jit.with_function(func, |f: T| {
+                    println!("inside with_function callback");
+                    println!("result: {}", f(4.0));
+                });
+            }
+            e => {
+                panic!("error {:?} when compiling input {}", e, i_str);
+            }
+        }
+    }
+}
 ```
