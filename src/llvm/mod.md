@@ -81,11 +81,23 @@ impl Message {
     }
 }
 
-impl<'c> Type<'c> {
+pub trait Printed { fn printed(&self) -> Message; }
+
+impl<'c> Printed for Type<'c> {
     fn printed(&self) -> Message {
-        unsafe {
-            Message(LLVMPrintTypeToString(self.llvm_type_ref))
-        }
+        unsafe { Message(LLVMPrintTypeToString(self.llvm_type_ref)) }
+    }
+}
+
+impl<'c> Printed for Module<'c> {
+    fn printed(&self) -> Message {
+        unsafe { Message(LLVMPrintModuleToString(self.llvm_module_ref)) }
+    }
+}
+
+impl<'c> Printed for Value<'c> {
+    fn printed(&self) -> Message {
+        unsafe{ Message(LLVMPrintValueToString(self.llvm_value_ref)) }
     }
 }
 
