@@ -15,15 +15,16 @@ path = "src/lib.rs"
 # llvm = "*"
 semver = "*"
 llvm-sys = "*"
+libc = "*"
 
-[dependencies.llvm-alt]
-version = "0.3.1"
-git = "https://github.com/pnkfelix/llvm-rs"
+# [dependencies.llvm-alt]
+# version = "0.3.1"
+# git = "https://github.com/pnkfelix/llvm-rs"
 
 # [dependencies.llvm-alt-sys]
 # version = "0.1.4"
 # git = "https://github.com/pnkfelix/llvm-sys.rs"
 
-[dependencies.llvm-ext]
-version = "0.1.0"
-git = "https://github.com/pnkfelix/llvm-ext"
+# [dependencies.llvm-ext]
+# version = "0.1.0"
+# git = "https://github.com/pnkfelix/llvm-ext"

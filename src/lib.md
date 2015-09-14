@@ -1,9 +1,10 @@
 ```rust
 #![feature(into_cow, slice_patterns)]
+#![feature(cstr_to_str)]
 
-extern crate llvm;
+mod llvm;
 extern crate llvm_sys;
-extern crate llvm_ext;
+extern crate libc;
 
 pub const FIB_PROG: &'static str = r#"# Compute the x'th fibonacci number.
 (def fib (x)
