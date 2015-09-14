@@ -1,12 +1,11 @@
 ```rust
 #![allow(dead_code, unused_variables)]
 
-
 use self::fun_ctors::*;
 
 use llvm_sys::prelude::*;
 use llvm_sys::core::*;
-use llvm_sys::*;
+use llvm_sys::{self, LLVMAttribute, LLVMTypeKind};
 
 use libc::{c_char, c_uint};
 
@@ -16,8 +15,10 @@ use std::marker::PhantomData;
 use std::mem;
 
 pub use self::pass_manager::PassManager;
+pub use self::execution_engine::ExecutionEngine;
 
 mod pass_manager;
+mod execution_engine;
 
 #[derive(Copy, Clone)]
 pub struct Value<'c> {
@@ -71,6 +72,11 @@ pub struct Type<'c> {
 
 impl Drop for Message {
     fn drop(&mut self) { unsafe { LLVMDisposeMessage(self.0) } }
+}
+impl fmt::Debug for Message {
+    fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
+        write!(w, "Message({})", self.c_str().to_string_lossy())
+    }
 }
 struct Message(*mut c_char);
 impl Message {
@@ -207,6 +213,35 @@ impl<'c> Context<'c> {
     pub fn f32_type(&self) -> Type<'c> {
         unsafe { Type(LLVMFloatTypeInContext(self.llvm_context_ref)) }
     }
+
+    pub fn i64_type(&self) -> Type<'c> {
+        unsafe { Type(LLVMInt64TypeInContext(self.llvm_context_ref)) }
+    }
+    pub fn i32_type(&self) -> Type<'c> {
+        unsafe { Type(LLVMInt32TypeInContext(self.llvm_context_ref)) }
+    }
+    pub fn i16_type(&self) -> Type<'c> {
+        unsafe { Type(LLVMInt16TypeInContext(self.llvm_context_ref)) }
+    }
+    pub fn i8_type(&self) -> Type<'c> {
+        unsafe { Type(LLVMInt8TypeInContext(self.llvm_context_ref)) }
+    }
+    pub fn i1_type(&self) -> Type<'c> {
+        unsafe { Type(LLVMInt1TypeInContext(self.llvm_context_ref)) }
+    }
+    #[allow(non_snake_case)]
+    pub fn iN_type(&self, num_bits: u32) -> Type<'c> {
+        unsafe { Type(LLVMIntTypeInContext(self.llvm_context_ref, num_bits)) }
+    }
+}
+
+impl Compile for u64 {
+    fn compile<'c>(&self, context: &Context<'c>) -> Value<'c> {
+        let sign_extend = 0;
+        let t = context.i64_type();
+        let r = unsafe { LLVMConstInt(t.llvm_type_ref, *self, sign_extend) };
+        Value { a: PhantomData, llvm_value_ref: r }
+    }
 }
 
 impl Compile for f64 {
@@ -257,7 +292,15 @@ impl<'c> Value<'c> {
             }
         }
     }
-
+    pub fn add_attributes(&self, a: LLVMAttribute) {
+        unsafe { LLVMAddAttribute(self.llvm_value_ref, a) }
+    }
+    pub fn remove_attributes(&self, a: LLVMAttribute) {
+        unsafe { LLVMRemoveAttribute(self.llvm_value_ref, a) }
+    }
+    pub fn get_attributes(&self) -> LLVMAttribute {
+        unsafe { LLVMGetAttribute(self.llvm_value_ref) }
+    }
 }
 
 fn kind_str(k: LLVMTypeKind) -> &'static str {
@@ -456,10 +499,10 @@ impl<'c> Builder<'c> {
     pub fn build_ui_to_fp(&self, a: Value<'c>, t: &Type<'c>) -> Value<'c> {
         unimplemented!()
     }
-    pub fn build_icmp(&self, a: Value<'c>, b: Value<'c>, op: LLVMIntPredicate) -> Value<'c> {
+    pub fn build_icmp(&self, a: Value<'c>, b: Value<'c>, op: llvm_sys::LLVMIntPredicate) -> Value<'c> {
         unimplemented!()
     }
-    pub fn build_fcmp(&self, a: Value<'c>, b: Value<'c>, op: LLVMRealPredicate) -> Value<'c> {
+    pub fn build_fcmp(&self, a: Value<'c>, b: Value<'c>, op: llvm_sys::LLVMRealPredicate) -> Value<'c> {
         unimplemented!()
     }
 }
@@ -499,6 +542,22 @@ impl<'c> Module<'c> {
         //     let mref: llvm_sys::prelude::LLVMModuleRef = (*ctxt.module).as_ptr();
         //     llvm_sys::core::LLVMDumpModule(mref);
         // }
+    }
+    pub fn verify(&self) -> Result<(), Message> {
+        unsafe {
+            let mut msg: *mut c_char = mem::uninitialized();
+            let ret = llvm_sys::analysis::LLVMVerifyModule(
+                self.llvm_module_ref,
+                llvm_sys::analysis::LLVMVerifierFailureAction::LLVMReturnStatusAction,
+                // llvm_sys::analysis::LLVMVerifierFailureAction::LLVMPrintMessageAction,
+                // llvm_sys::analysis::LLVMVerifierFailureAction::LLVMAbortProcessAction,
+                &mut msg);
+            if ret == 1 {
+                Err(Message(msg))
+            } else {
+                Ok(())
+            }
+        }
     }
 }
 

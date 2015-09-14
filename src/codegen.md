@@ -374,29 +374,27 @@ fn demo_fib() {
     });
 }
 
-#[cfg(not_now)]
 #[test]
 fn demo_three() {
-    use llvm::Attribute::*;
-    use llvm::ExecutionEngine; // provides `JitEngine::new` etc
+    use llvm::ExecutionEngine;
 
     let ctx = llvm::Context::new();
     let module = llvm::Module::new("simple", &ctx);
     type N = u64;
     type T = extern "C" fn(N) -> N;
-    let func = module.add_function(
-        "fib", llvm::Type::get::<T>(&ctx));
-    func.add_attributes(&[NoUnwind, ReadNone]);
-    let entry = func.append("entry");
+    let f_type = llvm::FunctionType::new(ctx.i64_type(), &[ctx.i64_type()]);
+    let func = module.add_function("fib", f_type);
+    // func.add_attributes(llvm_sys::LLVMNoUnwindAttribute|
+    //                     llvm_sys::LLVMReadNoneAttribute);
+    let entry = func.append(&ctx, "entry");
     let builder = llvm::Builder::new(&ctx);
     fn n(x: N) -> N { x }
     let three_r = n(3 as N).compile(&ctx);
-    builder.position_at_end(entry);
+    builder.position_at_end(&entry);
     builder.build_ret(three_r);
     module.verify().unwrap();
-    let ee = llvm::JitEngine::new(
-        &module, llvm::JitOptions {opt_level: 0}).unwrap();
-    ee.with_function(func, |fib: T| {
+    let ee = ExecutionEngine::create_jit_compiler_for_module(&module, 0).unwrap();
+    ee.with_function(&ctx, &func, |fib: T| {
         for i in 0..10 {
             println!("thr {} = {}", i, fib(0 as N))
         }
