@@ -46,12 +46,12 @@ impl<'c> ToValue<'c> for FunctionPointer<'c> {
     }
 }
 
-pub struct Module<'c> {
-    a: PhantomData<&'c ()>,
+pub struct Module<'m> {
+    a: PhantomData<&'m ()>,
     llvm_module_ref: LLVMModuleRef,
 }
 
-impl<'c> Drop for Module<'c> {
+impl<'m> Drop for Module<'m> {
     fn drop(&mut self) {
         unsafe { LLVMDisposeModule(self.llvm_module_ref); }
     }
@@ -201,8 +201,8 @@ impl<'c> Drop for Context<'c> {
 }
 impl<'c> Context<'c> {
     pub fn new() -> Context<'c> {
-        unsafe { Context { a: PhantomData,
-                           llvm_context_ref: LLVMContextCreate() } }
+        let lref = unsafe { LLVMContextCreate() };
+        Context { a: PhantomData, llvm_context_ref: lref }
     }
     pub fn get_type<T:Compile>(&self) -> &'c Type {
         unimplemented!()
@@ -507,8 +507,8 @@ impl<'c> Builder<'c> {
     }
 }
 
-impl<'c> Module<'c> {
-    pub fn new(name: &str, llvm_context: &Context<'c>) -> Module<'c> {
+impl<'m> Module<'m> {
+    pub fn new<'c:'m>(name: &str, llvm_context: &Context<'c>) -> Module<'m> {
         let name = CString::new(name).unwrap();
         let mref = unsafe {
             LLVMModuleCreateWithNameInContext(name.as_ptr(),
@@ -516,7 +516,7 @@ impl<'c> Module<'c> {
         };
         Module { a: PhantomData, llvm_module_ref: mref }
     }
-    pub fn get_function(&self, name: &str) -> Option<FunctionPointer<'c>> {
+    pub fn get_function(&self, name: &str) -> Option<FunctionPointer<'m>> {
         let s = CString::new(name).unwrap();
         let f = unsafe {
             LLVMGetNamedFunction(self.llvm_module_ref, s.as_ptr())
@@ -527,7 +527,7 @@ impl<'c> Module<'c> {
             Some(Function(f))
         }
     }
-    pub fn add_function(&self, name: &str, sig: FunctionType) -> FunctionPointer<'c> {
+    pub fn add_function(&self, name: &str, sig: FunctionType) -> FunctionPointer<'m> {
         let s = CString::new(name).unwrap();
         let f = unsafe {
             LLVMAddFunction(self.llvm_module_ref,

@@ -393,7 +393,7 @@ fn demo_three() {
     builder.position_at_end(&entry);
     builder.build_ret(three_r);
     module.verify().unwrap();
-    let ee = ExecutionEngine::create_jit_compiler_for_module(&module, 0).unwrap();
+    let ee = ExecutionEngine::create_jit_compiler_for_module(module, 0).unwrap();
     ee.with_function(&ctx, &func, |fib: T| {
         for i in 0..10 {
             println!("thr {} = {}", i, fib(0 as N))
