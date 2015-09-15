@@ -5,32 +5,55 @@ use llvm_sys::transforms::scalar::*;
 
 use super::*;
 
-impl Drop for PassManager {
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
+
+impl<'m> Drop for PassManager<'m> {
     fn drop(&mut self) {
         unsafe { LLVMDisposePassManager(self.llvm_pass_manager_ref); }
     }
 }
 
-pub struct PassManager {
+impl<'m> PassManager<'m> {
+    pub fn new() -> PassManager<'m> {
+        unsafe {
+            PassManager { a: PhantomData,
+                          llvm_pass_manager_ref: LLVMCreatePassManager() }
+        }
+    }
+}
+
+pub struct PassManager<'m> {
+    a: PhantomData<&'m ()>,
     llvm_pass_manager_ref: LLVMPassManagerRef
 }
 
-impl PassManager {
-    pub fn new() -> PassManager {
-        unsafe {
-            PassManager { llvm_pass_manager_ref: LLVMCreatePassManager() }
+pub struct FunctionPassManager<'m> {
+    p: PassManager<'m>,
+}
+
+impl<'m> Deref for FunctionPassManager<'m> {
+    type Target = PassManager<'m>;
+    fn deref(&self) -> &Self::Target { &self.p }
+}
+
+impl<'m> DerefMut for FunctionPassManager<'m> {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.p }
+}
+
+impl<'m> FunctionPassManager<'m> {
+    pub fn for_module(m: &Module<'m>) -> FunctionPassManager<'m> {
+        let lref = unsafe {
+            LLVMCreateFunctionPassManagerForModule(m.llvm_module_ref)
+        };
+        FunctionPassManager{
+            p: PassManager { a: PhantomData,
+                             llvm_pass_manager_ref: lref  }
         }
     }
+}
 
-    pub fn fpm_for_module(m: &Module) -> PassManager {
-        unsafe {
-            PassManager {
-                llvm_pass_manager_ref:
-                LLVMCreateFunctionPassManagerForModule(m.llvm_module_ref)
-            }
-        }
-    }
-
+impl<'m> PassManager<'m> {
     pub fn add_basic_alias_analysis_pass(&mut self) {
         unsafe { LLVMAddBasicAliasAnalysisPass(self.llvm_pass_manager_ref) }
     }
@@ -46,7 +69,9 @@ impl PassManager {
     pub fn add_cfg_simplification_pass(&mut self) {
         unsafe { LLVMAddCFGSimplificationPass(self.llvm_pass_manager_ref) }
     }
+}
 
+impl<'m> FunctionPassManager<'m> {
     /// Initializes all of the function passes scheduled in the
     /// function pass manager. Returns true if any of the passes
     /// modified the module, false otherwise.
@@ -56,6 +81,18 @@ impl PassManager {
         unsafe { LLVMInitializeFunctionPassManager(self.llvm_pass_manager_ref) != 0 }
     }
 
-    pub fn run<'c>(&self, f: FunctionPointer<'c>) { unimplemented!() }
+    pub fn run<'c>(&self, f: FunctionPointer<'c>) -> RunResult {
+        let r = unsafe { LLVMRunFunctionPassManager(self.llvm_pass_manager_ref,
+                                                    f.llvm_value_ref) };
+        match r {
+            1 => RunResult::InputModified,
+            _ => RunResult::InputUnmodified,
+        }
+    }
+}
+
+pub enum RunResult {
+    InputModified,
+    InputUnmodified,
 }
 ```

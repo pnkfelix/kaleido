@@ -6,6 +6,7 @@ use self::fun_ctors::*;
 use llvm_sys::prelude::*;
 use llvm_sys::core::*;
 use llvm_sys::{self, LLVMAttribute, LLVMTypeKind};
+use llvm_ext::sys::LLVMVerifyFunctionWithOutput;
 
 use libc::{c_char, c_uint};
 
@@ -15,8 +16,13 @@ use std::marker::PhantomData;
 use std::mem;
 use std::ops::Deref;
 
-pub use self::pass_manager::PassManager;
+pub use self::pass_manager::{PassManager, FunctionPassManager};
 pub use self::execution_engine::ExecutionEngine;
+pub use self::execution_engine::{Args0Fn};
+pub use self::execution_engine::{Args1Fn, VarArgs1Fn};
+pub use self::execution_engine::{Args2Fn, VarArgs2Fn};
+pub use self::execution_engine::{Args3Fn, VarArgs3Fn};
+pub use self::execution_engine::{Args4Fn, VarArgs4Fn};
 
 mod pass_manager;
 mod execution_engine;
@@ -84,6 +90,11 @@ impl Drop for Message {
 impl fmt::Debug for Message {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
         write!(w, "Message({})", self.c_str().to_string_lossy())
+    }
+}
+impl fmt::Display for Message {
+    fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
+        write!(w, "{}", self.c_str().to_string_lossy())
     }
 }
 struct Message(*mut c_char);
@@ -154,24 +165,30 @@ impl<'c> PointerType<'c> {
 }
 
 impl<'c> FunctionType<'c> {
-    pub fn new(ret: Type<'c>, args: &[Type<'c>]) -> FunctionType<'c> {
+    fn new_core(ret: Type<'c>, args: &[Type<'c>], is_var_arg: bool) -> FunctionType<'c> {
         let r = unsafe {
             FunctionType(LLVMFunctionType(ret.llvm_type_ref,
                                           mem::transmute(args.as_ptr()),
                                           args.len() as c_uint,
-                                          0))
+                                          if is_var_arg { 1 } else { 0 }))
         };
         // println!("FunctionType::new(ret: {:?}, args: {:?}) => {:?}", ret, args, r);
         assert_eq!(r.count_param_types(), args.len());
         r
     }
 
+    pub fn new(ret: Type<'c>, args: &[Type<'c>]) -> FunctionType<'c> {
+        FunctionType::new_core(ret, args, false)
+    }
+
     pub fn new_var_arg(ret: Type<'c>, args: &[Type<'c>]) -> FunctionType<'c> {
-        unimplemented!()
+        FunctionType::new_core(ret, args, true)
     }
 
     pub fn is_var_arg(&self) -> bool {
-        unimplemented!()
+        unsafe {
+            LLVMIsFunctionVarArg(self.t.llvm_type_ref) == 1
+        }
     }
 
     pub fn return_type(&self) -> Type<'c> {
@@ -366,7 +383,9 @@ impl<'c> FunctionPointer<'c> {
         c
     }
     pub fn get_type(&self) -> PointerType {
-        PointerType(self.v.get_type().llvm_type_ref)
+        let t = self.v.get_type();
+        assert!(t.is_pointer());
+        PointerType(t.llvm_type_ref)
     }
     pub fn get_function_type(&self) -> FunctionType {
         let mut t = self.v.get_type();
@@ -401,7 +420,22 @@ impl<'c> FunctionPointer<'c> {
         Block(b)
     }
 
-    pub fn verify(&self) -> Result<(), String> { unimplemented!() }
+    pub fn verify(&self) -> Result<(), Message> {
+        unsafe {
+            let mut msg: *mut c_char = mem::uninitialized();
+            let ret =
+                LLVMVerifyFunctionWithOutput(self.v.llvm_value_ref,
+                                             llvm_sys::analysis::LLVMVerifierFailureAction::LLVMReturnStatusAction,
+                                             // llvm_sys::analysis::LLVMVerifierFailureAction::LLVMPrintMessageAction,
+                                             // llvm_sys::analysis::LLVMVerifierFailureAction::LLVMAbortProcessAction,
+                                             &mut msg);
+            if ret == 1 {
+                Err(Message(msg))
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 impl<'c> Arg<'c> {

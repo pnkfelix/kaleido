@@ -283,7 +283,7 @@ fn dump_optimized_ir() {
     let llvm_context = llvm::Context::new();
     let ctxt = Context::new(&llvm_context, "kaleido jit");
 
-    let mut fpm = llvm::PassManager::fpm_for_module(&ctxt.module);
+    let mut fpm = llvm::FunctionPassManager::for_module(&ctxt.module);
     fpm.add_basic_alias_analysis_pass();
     fpm.add_instruction_combining_pass();
     fpm.add_reassociate_pass();
@@ -313,7 +313,7 @@ fn dump_optimized_ir() {
 
 #[test]
 fn demo_fib() {
-    use llvm::ExecutionEngine; // provides `JitEngine::new` etc
+    use llvm::{ExecutionEngine, VarArgs1Fn}; // provides `JitEngine::new` etc
 
     let ctx = llvm::Context::new();
     let module = llvm::Module::new("simple", &ctx);
@@ -351,21 +351,21 @@ fn demo_fib() {
     builder.build_ret(builder.build_iadd(*fa, *fb, None));
     module.verify().unwrap();
     let ee = ExecutionEngine::create_jit_compiler_for_module(module, 0).unwrap();
-    ee.with_function(&ctx, &func, |fib: extern fn(u64) -> u64| {
+    ee.with_function(&func, |fib: VarArgs1Fn<u64,u64>| {
         for i in 0..10 {
-            println!("fib {} = {}", i, fib(i))
+            println!("fib {} = {}", i, fib.0(i))
         }
     });
 }
 
 #[test]
 fn demo_three() {
-    use llvm::ExecutionEngine;
+    use llvm::{ExecutionEngine, VarArgs1Fn};
 
     let ctx = llvm::Context::new();
     let module = llvm::Module::new("simple", &ctx);
     type N = u64;
-    type T = extern "C" fn(N) -> N;
+    type T = extern "C" fn(N, ...) -> N;
     let f_type = llvm::FunctionType::new(ctx.i64_type(), &[ctx.i64_type()]);
     let func = module.add_function("thr", f_type);
     func.add_attribute(llvm_sys::LLVMNoUnwindAttribute|
@@ -378,9 +378,9 @@ fn demo_three() {
     builder.build_ret(three_r);
     module.verify().unwrap();
     let ee = ExecutionEngine::create_jit_compiler_for_module(module, 0).unwrap();
-    ee.with_function(&ctx, &func, |fib: T| {
+    ee.with_function(&func, |fib: VarArgs1Fn<N,N>| {
         for i in 0..10 {
-            println!("thr {} = {}", i, fib(0 as N))
+            println!("thr {} = {}", i, fib.0(0 as N))
         }
     });
 }
@@ -388,7 +388,7 @@ fn demo_three() {
 #[test]
 fn demo_mcjit() {
     use llvm_sys;
-    use llvm::ExecutionEngine; // provides `JitEngine::new` etc
+    use llvm::{ExecutionEngine, VarArgs1Fn};
 
     // let llvm_context = llvm::Context::new();
     // let ctxt = ContextState::new(&llvm_context, "kaleido jit");
@@ -407,20 +407,25 @@ fn demo_mcjit() {
         let llvm_context = llvm::Context::new();
         let ctxt = Context::new(&llvm_context, "fresh_ctxt");
         type N = f64;
-        type T = extern "C" fn(N) -> N;
-        let f_type = llvm::FunctionType::new(ctxt.llvm_context.f64_type(),
-                                             &[ctxt.llvm_context.f64_type()]);
+        type T = extern "C" fn(f: f64, ...) -> N;
         match i_ast.codegen(&ctxt) {
             Ok(v) => {
-                let func = match &i_ast {
-                    &ast::Expr::Def(..) => {
-                        v.to_function().unwrap_or_else(|| {
-                           panic!("expected FunctionPointer from Def, got {:?}",
-                                  v.get_type())
-                        })
+                const ARGS: [f64; 4] = [2.0, 3.0, 4.0, 5.0];
+                let (func, arg_count) = match &i_ast {
+                    &ast::Expr::Def(ref p, _) => {
+                        let arg_count = p.args.len();
+                        println!("i: {} [applied to {:?}]", i_str, &ARGS[0..arg_count]);
+                        let f = v.to_function().unwrap_or_else(|| {
+                            panic!("expected FunctionPointer from Def, got {:?}",
+                                   v.get_type())
+                        });
+                        (f, Some(arg_count))
                     }
                     _ => {
                         println!("i: {}", i_str);
+                        let f_type =
+                            llvm::FunctionType::new(ctxt.llvm_context.f64_type(),
+                                                    &[ctxt.llvm_context.f64_type()]);
                         let func = ctxt.module.add_function("fresh_fun", f_type);
                         func.add_attribute(llvm_sys::LLVMNoUnwindAttribute|
                                            llvm_sys::LLVMReadNoneAttribute);
@@ -429,15 +434,24 @@ fn demo_mcjit() {
                         let builder = ctxt.builder;
                         builder.position_at_end(&entry);
                         builder.build_ret(v);
-                        func
+                        (func, None)
                     }
                 };
+
                 ctxt.module.verify().unwrap();
                 let jit = ExecutionEngine::create_jit_compiler_for_module(ctxt.module, 0).unwrap();
                 println!("with_function");
-                jit.with_function(ctxt.llvm_context, &func, |f: T| {
+                jit.with_function(&func, |f: VarArgs1Fn<N,N>| {
                     println!("inside with_function callback");
-                    println!("result: {}", f(4.0));
+                    let r = match arg_count {
+                        None => f.0(4.0),
+                        Some(1) => f.0(ARGS[0]),
+                        Some(2) => f.0(ARGS[0], ARGS[1]),
+                        Some(3) => f.0(ARGS[0], ARGS[1], ARGS[2]),
+                        Some(4) => f.0(ARGS[0], ARGS[1], ARGS[2], ARGS[3]),
+                        Some(c) => panic!("unhandled arg count {}", c),
+                    };
+                    println!("result: {}", r)
                 });
             }
             Err(e) => {
