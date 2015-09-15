@@ -403,13 +403,10 @@ fn demo_three() {
     });
 }
 
-#[cfg(not_now)]
 #[test]
 fn demo_mcjit() {
     use llvm_sys;
-    use llvm::CastFrom; // provides `fn cast`
     use llvm::ExecutionEngine; // provides `JitEngine::new` etc
-    use llvm::Attribute::*;
 
     // let llvm_context = llvm::Context::new();
     // let ctxt = ContextState::new(&llvm_context, "kaleido jit");
@@ -424,27 +421,27 @@ fn demo_mcjit() {
         };
         let llvm_context = llvm::Context::new();
         let ctxt = ContextState::new(&llvm_context, "fresh_ctxt");
-        let ctxt = Context::from_context_state(&ctxt);
         let module = ctxt.module;
-        type T = extern "C" fn(f64) -> f64;
-        let func = module.add_function(
-            "fresh_fun",
-            llvm::Type::get::<T>(&ctxt.llvm_context));
-        func.add_attributes(&[NoUnwind, ReadNone]);
+        type N = f64;
+        type T = extern "C" fn(N) -> N;
+        let f_type = llvm::FunctionType::new(ctxt.llvm_context.f64_type(),
+                                             &[ctxt.llvm_context.f64_type()]);
+        let func = module.add_function("fresh_fun", f_type);
+        func.add_attribute(llvm_sys::LLVMNoUnwindAttribute|
+                           llvm_sys::LLVMReadNoneAttribute);
         match 3 /* e.codegen(&ctxt) */ {
             3 => {
                 println!("i: {}", i_str);
-                let entry = func.append("entry");
+                let entry = func.append(ctxt.llvm_context, "entry");
                 let builder = llvm::Builder::new(ctxt.llvm_context);
                 // let builder = ctxt.builder;
                 let v = (3.0).compile(&ctxt.llvm_context);
-                builder.position_at_end(entry);
+                builder.position_at_end(&entry);
                 builder.build_ret(v);
                 module.verify().unwrap();
-                let jit = llvm::JitEngine::new(
-                    module, llvm::JitOptions { opt_level: 0, }).unwrap();
+                let jit = ExecutionEngine::create_jit_compiler_for_module(module, 0).unwrap();
                 println!("with_function");
-                jit.with_function(func, |f: T| {
+                jit.with_function(ctxt.llvm_context, &func, |f: T| {
                     println!("inside with_function callback");
                     println!("result: {}", f(4.0));
                 });
