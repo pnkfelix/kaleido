@@ -159,7 +159,7 @@ impl Expr {
                     for a in args {
                         actuals.push(try!(a.codegen(ctxt)));
                     }
-                    Ok(ctxt.builder.build_call(callee, &mut actuals[..], None))
+                    Ok(ctxt.builder.build_call(callee, &mut actuals[..], None).to_value())
                 }
                 _ => unimplemented!(),
             }
@@ -329,45 +329,47 @@ fn dump_optimized_ir() {
     });
 }
 
-#[cfg(not_now)]
 #[test]
 fn demo_fib() {
-    use llvm::Attribute::*;
     use llvm::ExecutionEngine; // provides `JitEngine::new` etc
 
     let ctx = llvm::Context::new();
     let module = llvm::Module::new("simple", &ctx);
-    let func = module.add_function(
-        "fib", llvm::Type::get::<fn(u64) -> u64>(&ctx));
-    func.add_attributes(&[NoUnwind, ReadNone]);
-    let value = &func[0];
-    let entry = func.append("entry");
-    let on_zero = func.append("on_zero");
-    let on_one = func.append("on_one");
-    let default = func.append("default");
+    type N = u64;
+    type T = extern "C" fn(N) -> N;
+    let f_type = llvm::FunctionType::new(ctx.i64_type(), &[ctx.i64_type()]);
+    let func = module.add_function("fib", f_type);
+    func.add_attribute(llvm_sys::LLVMNoUnwindAttribute|
+                       llvm_sys::LLVMReadNoneAttribute);
+    let value = func.arg(0);
+    let entry = func.append(&ctx, "entry");
+    let on_zero = func.append(&ctx, "on_zero");
+    let on_one = func.append(&ctx, "on_one");
+    let default = func.append(&ctx, "default");
     let builder = llvm::Builder::new(&ctx);
     let zero = 0u64.compile(&ctx);
     let one = 1u64.compile(&ctx);
-    builder.position_at_end(entry);
-    builder.build_switch(value, default, &[
-        (zero, on_zero),
-        (one, on_one)
+    builder.position_at_end(&entry);
+    builder.build_switch(*value, &default, &[
+        (zero, &on_zero),
+        (one, &on_one)
     ]);
-    builder.position_at_end(on_zero);
+    builder.position_at_end(&on_zero);
     builder.build_ret(zero);
-    builder.position_at_end(on_one);
+    builder.position_at_end(&on_one);
     builder.build_ret(one);
-    builder.position_at_end(default);
+    builder.position_at_end(&default);
     let two = 2u64.compile(&ctx);
-    let a = builder.build_sub(value, one);
-    let b = builder.build_sub(value, two);
-    let fa = builder.build_tail_call(func, &[a]);
-    let fb = builder.build_tail_call(func, &[b]);
-    builder.build_ret(builder.build_add(fa, fb));
+    let a = builder.build_sub(*value, one, None);
+    let b = builder.build_sub(*value, two, None);
+    let fa: llvm::Call = builder.build_call(func, &mut [a], None);
+    fa.set_tail_call(true);
+    let fb = builder.build_call(func, &mut [b], None);
+    fb.set_tail_call(true);
+    builder.build_ret(builder.build_add(*fa, *fb, None));
     module.verify().unwrap();
-    let ee = llvm::JitEngine::new(
-        &module, llvm::JitOptions {opt_level: 0}).unwrap();
-    ee.with_function(func, |fib: extern fn(u64) -> u64| {
+    let ee = ExecutionEngine::create_jit_compiler_for_module(module, 0).unwrap();
+    ee.with_function(&ctx, &func, |fib: extern fn(u64) -> u64| {
         for i in 0..10 {
             println!("fib {} = {}", i, fib(i))
         }
@@ -383,7 +385,7 @@ fn demo_three() {
     type N = u64;
     type T = extern "C" fn(N) -> N;
     let f_type = llvm::FunctionType::new(ctx.i64_type(), &[ctx.i64_type()]);
-    let func = module.add_function("fib", f_type);
+    let func = module.add_function("thr", f_type);
     func.add_attribute(llvm_sys::LLVMNoUnwindAttribute|
                        llvm_sys::LLVMReadNoneAttribute);
     let entry = func.append(&ctx, "entry");

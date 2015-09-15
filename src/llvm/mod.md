@@ -13,12 +13,18 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
+use std::ops::Deref;
 
 pub use self::pass_manager::PassManager;
 pub use self::execution_engine::ExecutionEngine;
 
 mod pass_manager;
 mod execution_engine;
+
+pub struct Context<'c> {
+    a: PhantomData<&'c ()>,
+    llvm_context_ref: LLVMContextRef,
+}
 
 #[derive(Copy, Clone)]
 pub struct Value<'c> {
@@ -30,21 +36,30 @@ pub trait ToValue<'c> {
     fn to_value(&self) -> Value<'c>;
 }
 
-pub struct Context<'c> {
-    a: PhantomData<&'c ()>,
-    llvm_context_ref: LLVMContextRef,
-}
+macro_rules! wrapper_value {
+    ($SubValue:ident) => {
+        impl<'c> Deref for $SubValue<'c> {
+            type Target = Value<'c>;
+            fn deref(&self) -> &Self::Target { &self.v }
+        }
 
-#[derive(Copy, Clone)]
-pub struct FunctionPointer<'c> {
-    v: Value<'c>,
-}
+        impl<'c> ToValue<'c> for $SubValue<'c> {
+            fn to_value(&self) -> Value<'c> {
+                Value { a: self.a, llvm_value_ref: self.llvm_value_ref }
+            }
+        }
 
-impl<'c> ToValue<'c> for FunctionPointer<'c> {
-    fn to_value(&self) -> Value<'c> {
-        Value { a: self.a, llvm_value_ref: self.llvm_value_ref }
+        #[derive(Copy, Clone)]
+        pub struct $SubValue<'c> {
+            v: Value<'c>,
+        }
     }
 }
+
+
+wrapper_value!(FunctionPointer);
+wrapper_value!(Arg);
+wrapper_value!(Call);
 
 pub struct Module<'m> {
     a: PhantomData<&'m ()>,
@@ -56,13 +71,6 @@ impl<'m> Drop for Module<'m> {
         unsafe { LLVMDisposeModule(self.llvm_module_ref); }
     }
 }
-
-use std::ops::Deref;
-impl<'c> Deref for FunctionPointer<'c> {
-    type Target = Value<'c>;
-    fn deref(&self) -> &Value<'c> { &self.v }
-}
-
 
 #[derive(Copy, Clone)]
 pub struct Type<'c> {
@@ -393,11 +401,6 @@ impl<'c> FunctionPointer<'c> {
     pub fn verify(&self) -> Result<(), String> { unimplemented!() }
 }
 
-#[derive(Copy, Clone)]
-struct Arg<'c> {
-    v: Value<'c>,
-}
-
 impl<'c> Arg<'c> {
     pub fn add_attributes(&self, a: LLVMAttribute) {
         unsafe { LLVMAddAttribute(self.v.llvm_value_ref, a) }
@@ -410,15 +413,13 @@ impl<'c> Arg<'c> {
     }
 }
 
-impl<'c> ToValue<'c> for Arg<'c> {
-    fn to_value(&self) -> Value<'c> {
-        Value { a: self.a, llvm_value_ref: self.llvm_value_ref }
+impl<'c> Call<'c> {
+    pub fn set_tail_call(&self, flag: bool) {
+        unsafe { LLVMSetTailCall(self.v.llvm_value_ref, if flag { 1 } else { 0 }) }
     }
-}
-
-impl<'c> Deref for Arg<'c> {
-    type Target = Value<'c>;
-    fn deref(&self) -> &Value<'c> { &self.v }
+    pub fn is_tail_call(&self) -> bool {
+        unsafe { LLVMIsTailCall(self.v.llvm_value_ref) != 0 }
+    }
 }
 
 pub struct Builder<'c> {
@@ -451,15 +452,15 @@ impl<'c> Builder<'c> {
         }
     }
     pub fn build_call(&self, a: FunctionPointer<'c>, mut args: &mut [Value<'c>],
-                      name: Option<&str>) -> Value<'c> {
+                      name: Option<&str>) -> Call<'c> {
         let name = c_name(name);
         let name = name.as_ptr() as *const c_char;
         unsafe {
-            Value(LLVMBuildCall(self.llvm_builder_ref,
-                                a.v.llvm_value_ref,
-                                args.as_mut_ptr() as *mut LLVMValueRef,
-                                args.len() as c_uint,
-                                name))
+            Call { v: Value(LLVMBuildCall(self.llvm_builder_ref,
+                                          a.v.llvm_value_ref,
+                                          args.as_mut_ptr() as *mut LLVMValueRef,
+                                          args.len() as c_uint,
+                                          name)) }
         }
     }
     pub fn build_ret(&self, v: Value<'c>) -> Value<'c> {
@@ -510,6 +511,21 @@ impl<'c> Builder<'c> {
     }
     pub fn build_fcmp(&self, a: Value<'c>, b: Value<'c>, op: llvm_sys::LLVMRealPredicate) -> Value<'c> {
         unimplemented!()
+    }
+    pub fn build_switch(&self,
+                        a: Value<'c>,
+                        default: &Block,
+                        cases: &[(Value<'c>, &Block<'c>)]) -> Value<'c> {
+        unsafe {
+            let lswitch = LLVMBuildSwitch(self.llvm_builder_ref,
+                                          a.llvm_value_ref,
+                                          default.llvm_basic_block_ref,
+                                          cases.len() as c_uint);
+            for &(v, b) in cases {
+                LLVMAddCase(lswitch, v.llvm_value_ref, b.llvm_basic_block_ref);
+            }
+            Value(lswitch)
+        }
     }
 }
 
