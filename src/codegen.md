@@ -388,7 +388,7 @@ fn demo_three() {
 #[test]
 fn demo_mcjit() {
     use llvm_sys;
-    use llvm::{ExecutionEngine, VarArgs1Fn};
+    use llvm::{ExecutionEngine};
 
     // let llvm_context = llvm::Context::new();
     // let ctxt = ContextState::new(&llvm_context, "kaleido jit");
@@ -440,19 +440,17 @@ fn demo_mcjit() {
 
                 ctxt.module.verify().unwrap();
                 let jit = ExecutionEngine::create_jit_compiler_for_module(ctxt.module, 0).unwrap();
-                println!("with_function");
-                jit.with_function(&func, |f: VarArgs1Fn<N,N>| {
-                    println!("inside with_function callback");
-                    let r = match arg_count {
-                        None => f.0(4.0),
-                        Some(1) => f.0(ARGS[0]),
-                        Some(2) => f.0(ARGS[0], ARGS[1]),
-                        Some(3) => f.0(ARGS[0], ARGS[1], ARGS[2]),
-                        Some(4) => f.0(ARGS[0], ARGS[1], ARGS[2], ARGS[3]),
-                        Some(c) => panic!("unhandled arg count {}", c),
-                    };
-                    println!("result: {}", r)
-                });
+                let first_r: f64 = match arg_count {
+                    None => jit.get_function::<(f64,), f64>(&func)(4.0),
+                    Some(0) => jit.get_function::<(), f64>(&func)(),
+                    Some(1) => jit.get_function::<(f64,), f64>(&func)(ARGS[0]),
+                    Some(2) => jit.get_function::<(f64,f64), f64>(&func)(ARGS[0], ARGS[1]),
+                    Some(3) => jit.get_function::<(f64,f64,f64), f64>(&func)(ARGS[0], ARGS[1], ARGS[2]),
+                    Some(4) => jit.get_function::<(f64,f64,f64,f64), f64>(&func)(ARGS[0], ARGS[1], ARGS[2], ARGS[3]),
+                    Some(c) => panic!("unhandled arg count {}", c),
+                };
+
+                println!("result: {}", first_r);
             }
             Err(e) => {
                 panic!("error {:?} when compiling input {}", e, i_str);

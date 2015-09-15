@@ -1,7 +1,7 @@
 ```rust
 #![feature(into_cow, slice_patterns)]
 #![feature(cstr_to_str)]
-#![feature(core, unboxed_closures, associated_type_defaults)]
+#![feature(core,unboxed_closures)]
 
 mod llvm;
 extern crate llvm_sys;

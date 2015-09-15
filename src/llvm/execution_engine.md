@@ -39,15 +39,36 @@ pub struct Args4Fn<A,B,C,D,R>(pub extern "C" fn(A, B, C, D) -> R);
 pub enum Void { }
 
 trait FnArgs: Sized {
-    type A = Void;
-    type B = Void;
-    type C = Void;
-    type D = Void;
+    type A;
+    type B;
+    type C;
+    type D;
     fn to_t0(self) -> () { panic!("unsupported") }
     fn to_t1(self) -> (Self::A,) { panic!("unsupported") }
     fn to_t2(self) -> (Self::A,Self::B) { panic!("unsupported") }
     fn to_t3(self) -> (Self::A,Self::B,Self::C) { panic!("unsupported") }
     fn to_t4(self) -> (Self::A,Self::B,Self::C,Self::D) { panic!("unsupported") }
+}
+
+impl FnArgs for () {
+    type A = Void; type B = Void; type C = Void; type D = Void;
+    fn to_t0(self) -> () { () }
+}
+impl<A> FnArgs for (A,) {
+    type A = A; type B = Void; type C = Void; type D = Void;
+    fn to_t1(self) -> (Self::A,) { self }
+}
+impl<A,B> FnArgs for (A,B) {
+    type A = A; type B = B; type C = Void; type D = Void;
+    fn to_t2(self) -> (Self::A,Self::B) { self }
+}
+impl<A,B,C> FnArgs for (A,B,C) {
+    type A = A; type B = B; type C = C; type D = Void;
+    fn to_t3(self) -> (Self::A,Self::B,Self::C) { self }
+}
+impl<A,B,C,D> FnArgs for (A,B,C,D) {
+    type A = A; type B = B; type C = C; type D = D;
+    fn to_t4(self) -> (Self::A,Self::B,Self::C,Self::D) { self }
 }
 
 macro_rules! fn_impls {
@@ -225,7 +246,7 @@ impl<'c> ExecutionEngine<'c> {
     // Arguably the 'c bound on Args and Ret is nonsense -- why should the data
     // processed by the function have anything to do with the lifetime bound of
     // the function itself?
-    fn get_function<Args:'c, Ret:'c>(&self, f: &FunctionPointer<'c>) -> Box<Fn<Args, Output=Ret>+'c>
+    pub fn get_function<Args:'c, Ret:'c>(&self, f: &FunctionPointer<'c>) -> Box<Fn<Args, Output=Ret>+'c>
         where Args: FnArgs
     {
         let ft = f.get_function_type();
