@@ -40,4 +40,22 @@ pub trait ToExpr { fn to_expr(&self) -> Expr; }
 impl<T:Clone+IntoExpr> ToExpr for T {
     fn to_expr(&self) -> Expr { self.clone().into_expr() }
 }
+
+impl Expr {
+    pub fn has_free_variables(&self, bound: &[Ident]) -> bool {
+        match *self {
+            Expr::Number(..) |
+            Expr::Op(..) |
+            Expr::Extern(..) => false,
+            Expr::Ident(ref i) => !bound.contains(i),
+            Expr::Def(ref proto, ref body) => {
+                let mut subbound = proto.args.clone();
+                subbound.push(proto.name.clone());
+                body.iter().any(|e| e.has_free_variables(&subbound))
+            }
+            Expr::Combine(ref exprs) =>
+                exprs.iter().any(|e| e.has_free_variables(bound)),
+        }
+    }
+}
 ```
