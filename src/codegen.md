@@ -37,35 +37,19 @@ fn error(kind: CodegenErrorKind) -> CodegenError {
     CodegenError { kind: kind }
 }
 
-pub struct ContextState<'c> {
+pub struct Context<'c> {
     llvm_context: &'c llvm::Context<'c>,
     module: llvm::Module<'c>,
     builder: llvm::Builder<'c>,
-}
-
-impl<'c> ContextState<'c> {
-    pub fn new(llvm_context: &'c llvm::Context<'c>, name: &str) -> ContextState<'c> {
-        ContextState {
-            llvm_context: llvm_context,
-            module: llvm::Module::new(name, llvm_context),
-            builder: llvm::Builder::new(llvm_context),
-        }
-    }
-}
-
-pub struct Context<'c> {
-    pub llvm_context: &'c llvm::Context<'c>,
-    pub module: &'c llvm::Module<'c>,
-    pub builder: &'c llvm::Builder<'c>,
     pub named_values: RefCell<HashMap<String, Value<'c>>>,
 }
 
 impl<'c> Context<'c> {
-    pub fn from_context_state(ctxt: &'c ContextState<'c>) -> Context<'c> {
+    pub fn new(llvm_context: &'c llvm::Context<'c>, name: &str) -> Context<'c> {
         Context {
-            llvm_context: &ctxt.llvm_context,
-            module: &ctxt.module,
-            builder: &ctxt.builder,
+            llvm_context: llvm_context,
+            module: llvm::Module::new(name, llvm_context),
+            builder: llvm::Builder::new(llvm_context),
             named_values: RefCell::new(HashMap::new()),
         }
     }
@@ -75,21 +59,21 @@ impl<'c> Context<'c> {
     fn with_1_arg<F>(&self,
                      e1: &ast::Expr,
                      f: F) -> Result<Value<'c>>
-        where F: Fn(&'c llvm::Builder<'c>, Value<'c>) -> Value<'c>
+        where F: Fn(&llvm::Builder<'c>, Value<'c>) -> Value<'c>
     {
         let v1 = try!(e1.codegen(self));
-        Ok(f(self.builder, v1))
+        Ok(f(&self.builder, v1))
     }
 
     fn with_2_args<F>(&self,
                       e1: &ast::Expr,
                       e2: &ast::Expr,
                       f: F) -> Result<Value<'c>>
-        where F: Fn(&'c llvm::Builder<'c>, Value<'c>, Value<'c>) -> Value<'c>
+        where F: Fn(&llvm::Builder<'c>, Value<'c>, Value<'c>) -> Value<'c>
     {
         let v1 = try!(e1.codegen(self));
         let v2 = try!(e2.codegen(self));
-        Ok(f(self.builder, v1, v2))
+        Ok(f(&self.builder, v1, v2))
     }
 }
 
@@ -108,7 +92,7 @@ impl Expr {
                     // https://github.com/TomBebbington/llvm-rs/issues/3
                     // `build_neg` will only work for integer inputs
                     // so we resort to `build_sub` instead.
-                    ctxt.with_1_arg(e1, |b, v1| b.build_sub(
+                    ctxt.with_1_arg(e1, |b, v1| b.build_fsub(
                         (0.0).compile(ctxt.llvm_context),
                         v1,
                         None))
@@ -117,13 +101,13 @@ impl Expr {
                     ctxt.with_1_arg(e1, |b, v1| b.build_not(v1))
                 }
                 [Expr::Op('+'), ref e1, ref e2] => {
-                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_add(v1, v2, None))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_fadd(v1, v2, None))
                 }
                 [Expr::Op('-'), ref e1, ref e2] => {
-                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_sub(v1, v2, None))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_fsub(v1, v2, None))
                 }
                 [Expr::Op('*'), ref e1, ref e2] => {
-                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_mul(v1, v2, None))
+                    ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_fmul(v1, v2, None))
                 }
                 [Expr::Op('/'), ref e1, ref e2] => {
                     ctxt.with_2_args(e1, e2, |b, v1, v2| b.build_fdiv(v1, v2, None))
@@ -276,8 +260,7 @@ fn with_codegened_inputs<CF, C>(ctxt: Context, each_f: CF, finally: C)
 #[test]
 fn dump_ir() {
     let llvm_context = llvm::Context::new();
-    let ctxt = ContextState::new(&llvm_context, "kaleido jit");
-    let ctxt = Context::from_context_state(&ctxt);
+    let ctxt = Context::new(&llvm_context, "kaleido jit");
 
     with_codegened_inputs(ctxt, |ctxt, i, f| {
         if f.empty() {
@@ -298,10 +281,9 @@ fn dump_ir() {
 #[test]
 fn dump_optimized_ir() {
     let llvm_context = llvm::Context::new();
-    let ctxt = ContextState::new(&llvm_context, "kaleido jit");
-    let ctxt = Context::from_context_state(&ctxt);
+    let ctxt = Context::new(&llvm_context, "kaleido jit");
 
-    let mut fpm = llvm::PassManager::fpm_for_module(ctxt.module);
+    let mut fpm = llvm::PassManager::fpm_for_module(&ctxt.module);
     fpm.add_basic_alias_analysis_pass();
     fpm.add_instruction_combining_pass();
     fpm.add_reassociate_pass();
@@ -360,13 +342,13 @@ fn demo_fib() {
     builder.build_ret(one);
     builder.position_at_end(&default);
     let two = 2u64.compile(&ctx);
-    let a = builder.build_sub(*value, one, None);
-    let b = builder.build_sub(*value, two, None);
+    let a = builder.build_isub(*value, one, None);
+    let b = builder.build_isub(*value, two, None);
     let fa: llvm::Call = builder.build_call(func, &mut [a], None);
     fa.set_tail_call(true);
     let fb = builder.build_call(func, &mut [b], None);
     fb.set_tail_call(true);
-    builder.build_ret(builder.build_add(*fa, *fb, None));
+    builder.build_ret(builder.build_iadd(*fa, *fb, None));
     module.verify().unwrap();
     let ee = ExecutionEngine::create_jit_compiler_for_module(module, 0).unwrap();
     ee.with_function(&ctx, &func, |fib: extern fn(u64) -> u64| {
@@ -415,38 +397,50 @@ fn demo_mcjit() {
     // these are definitions so they are included in the dump.
     for i in &inputs::COLLECTED {
         let inputs::Input { ast: i_ast, str: i_str } = i();
-        let e = match i_ast {
-            ast::Expr::Def(..) | ast::Expr::Extern(..) => continue,
-            e => e,
-        };
+        if i_ast.has_free_variables(&[]) {
+            continue;
+        }
+        match i_ast {
+            ast::Expr::Extern(..) => continue,
+            _ => {}
+        }
         let llvm_context = llvm::Context::new();
-        let ctxt = ContextState::new(&llvm_context, "fresh_ctxt");
-        let module = ctxt.module;
+        let ctxt = Context::new(&llvm_context, "fresh_ctxt");
         type N = f64;
         type T = extern "C" fn(N) -> N;
         let f_type = llvm::FunctionType::new(ctxt.llvm_context.f64_type(),
                                              &[ctxt.llvm_context.f64_type()]);
-        let func = module.add_function("fresh_fun", f_type);
-        func.add_attribute(llvm_sys::LLVMNoUnwindAttribute|
-                           llvm_sys::LLVMReadNoneAttribute);
-        match 3 /* e.codegen(&ctxt) */ {
-            3 => {
-                println!("i: {}", i_str);
-                let entry = func.append(ctxt.llvm_context, "entry");
-                let builder = llvm::Builder::new(ctxt.llvm_context);
-                // let builder = ctxt.builder;
-                let v = (3.0).compile(&ctxt.llvm_context);
-                builder.position_at_end(&entry);
-                builder.build_ret(v);
-                module.verify().unwrap();
-                let jit = ExecutionEngine::create_jit_compiler_for_module(module, 0).unwrap();
+        match i_ast.codegen(&ctxt) {
+            Ok(v) => {
+                let func = match &i_ast {
+                    &ast::Expr::Def(..) => {
+                        v.to_function().unwrap_or_else(|| {
+                           panic!("expected FunctionPointer from Def, got {:?}",
+                                  v.get_type())
+                        })
+                    }
+                    _ => {
+                        println!("i: {}", i_str);
+                        let func = ctxt.module.add_function("fresh_fun", f_type);
+                        func.add_attribute(llvm_sys::LLVMNoUnwindAttribute|
+                                           llvm_sys::LLVMReadNoneAttribute);
+                        let entry = func.append(ctxt.llvm_context, "entry");
+                        let builder = llvm::Builder::new(ctxt.llvm_context);
+                        let builder = ctxt.builder;
+                        builder.position_at_end(&entry);
+                        builder.build_ret(v);
+                        func
+                    }
+                };
+                ctxt.module.verify().unwrap();
+                let jit = ExecutionEngine::create_jit_compiler_for_module(ctxt.module, 0).unwrap();
                 println!("with_function");
                 jit.with_function(ctxt.llvm_context, &func, |f: T| {
                     println!("inside with_function callback");
                     println!("result: {}", f(4.0));
                 });
             }
-            e => {
+            Err(e) => {
                 panic!("error {:?} when compiling input {}", e, i_str);
             }
         }

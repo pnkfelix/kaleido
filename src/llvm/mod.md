@@ -276,7 +276,11 @@ impl<'c> Value<'c> {
     }
     pub fn to_function(&self) -> Option<FunctionPointer> {
         // println!("Value::to_function k: {:?}", kind_str(self.get_type().kind()));
-        if self.get_type().is_function() {
+        let mut t = self.get_type();
+        while let Some(p) = t.to_pointer() {
+            t = p.element_type();
+        }
+        if t.is_function() {
             Some(Function(self.llvm_value_ref))
         } else {
             None
@@ -421,6 +425,12 @@ impl<'c> Call<'c> {
     }
 }
 
+impl<'c> Drop for Builder<'c> {
+    fn drop(&mut self) {
+        unsafe { LLVMDisposeBuilder(self.llvm_builder_ref); }
+    }
+}
+
 pub struct Builder<'c> {
     a: PhantomData<&'c ()>,
     llvm_builder_ref: LLVMBuilderRef,
@@ -486,11 +496,11 @@ macro_rules! builder_binop {
     }
 }
 
-builder_binop!(build_add,  LLVMBuildAdd);
+builder_binop!(build_iadd, LLVMBuildAdd);
 builder_binop!(build_fadd, LLVMBuildFAdd);
-builder_binop!(build_mul,  LLVMBuildMul);
+builder_binop!(build_imul, LLVMBuildMul);
 builder_binop!(build_fmul, LLVMBuildFMul);
-builder_binop!(build_sub,  LLVMBuildSub);
+builder_binop!(build_isub, LLVMBuildSub);
 builder_binop!(build_fsub, LLVMBuildFSub);
 builder_binop!(build_udiv, LLVMBuildUDiv);
 builder_binop!(build_sdiv, LLVMBuildSDiv);
