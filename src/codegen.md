@@ -176,7 +176,6 @@ fn lookup_or_generate_function<'c>(p: &ast::Proto,
             None => p.skeleton(ctxt),
             Some(f) => f,
         };
-    println!("lookup_or_generate: {:?}", f.get_type());
     let actual_len = f.num_params();
     if actual_len == arg_len {
         Ok(f)
