@@ -161,7 +161,7 @@ impl<'c> FunctionType<'c> {
                                           args.len() as c_uint,
                                           0))
         };
-        println!("FunctionType::new(ret: {:?}, args: {:?}) => {:?}", ret, args, r);
+        // println!("FunctionType::new(ret: {:?}, args: {:?}) => {:?}", ret, args, r);
         assert_eq!(r.count_param_types(), args.len());
         r
     }
@@ -275,8 +275,7 @@ impl<'c> Value<'c> {
         Type(r)
     }
     pub fn to_function(&self) -> Option<FunctionPointer> {
-        println!("Value::to_function k: {:?}",
-                 kind_str(self.get_type().kind()));
+        // println!("Value::to_function k: {:?}", kind_str(self.get_type().kind()));
         if self.get_type().is_function() {
             Some(Function(self.llvm_value_ref))
         } else {
@@ -357,9 +356,9 @@ pub struct Block<'c> {
 impl<'c> FunctionPointer<'c> {
     pub fn num_params(&self) -> usize {
         let t = self.get_function_type();
-        println!("FunctionPointer::num_params t: {:?}", t);
+        // println!("FunctionPointer::num_params t: {:?}", t);
         let c = t.count_param_types();
-        println!("FunctionPointer param_type count: {}", c);
+        // println!("FunctionPointer param_type count: {}", c);
         c
     }
     pub fn get_type(&self) -> PointerType {
