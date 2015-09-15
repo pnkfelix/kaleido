@@ -384,8 +384,8 @@ fn demo_three() {
     type T = extern "C" fn(N) -> N;
     let f_type = llvm::FunctionType::new(ctx.i64_type(), &[ctx.i64_type()]);
     let func = module.add_function("fib", f_type);
-    // func.add_attributes(llvm_sys::LLVMNoUnwindAttribute|
-    //                     llvm_sys::LLVMReadNoneAttribute);
+    func.add_attribute(llvm_sys::LLVMNoUnwindAttribute|
+                       llvm_sys::LLVMReadNoneAttribute);
     let entry = func.append(&ctx, "entry");
     let builder = llvm::Builder::new(&ctx);
     fn n(x: N) -> N { x }

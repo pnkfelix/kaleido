@@ -292,15 +292,6 @@ impl<'c> Value<'c> {
             }
         }
     }
-    pub fn add_attributes(&self, a: LLVMAttribute) {
-        unsafe { LLVMAddAttribute(self.llvm_value_ref, a) }
-    }
-    pub fn remove_attributes(&self, a: LLVMAttribute) {
-        unsafe { LLVMRemoveAttribute(self.llvm_value_ref, a) }
-    }
-    pub fn get_attributes(&self) -> LLVMAttribute {
-        unsafe { LLVMGetAttribute(self.llvm_value_ref) }
-    }
 }
 
 fn kind_str(k: LLVMTypeKind) -> &'static str {
@@ -378,6 +369,9 @@ impl<'c> FunctionPointer<'c> {
         let v = unsafe { LLVMGetParam(self.v.llvm_value_ref, i as c_uint) };
         Arg { v: Value(v) }
     }
+    pub fn add_attribute(&self, a: LLVMAttribute) {
+        unsafe { LLVMAddFunctionAttr(self.v.llvm_value_ref, a) }
+    }
     pub fn get_signature(&self) -> FunctionType {
         self.get_function_type()
     }
@@ -402,6 +396,18 @@ impl<'c> FunctionPointer<'c> {
 #[derive(Copy, Clone)]
 struct Arg<'c> {
     v: Value<'c>,
+}
+
+impl<'c> Arg<'c> {
+    pub fn add_attributes(&self, a: LLVMAttribute) {
+        unsafe { LLVMAddAttribute(self.v.llvm_value_ref, a) }
+    }
+    pub fn remove_attributes(&self, a: LLVMAttribute) {
+        unsafe { LLVMRemoveAttribute(self.v.llvm_value_ref, a) }
+    }
+    pub fn get_attributes(&self) -> LLVMAttribute {
+        unsafe { LLVMGetAttribute(self.v.llvm_value_ref) }
+    }
 }
 
 impl<'c> ToValue<'c> for Arg<'c> {
