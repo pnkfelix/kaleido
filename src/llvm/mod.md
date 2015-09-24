@@ -6,7 +6,7 @@ use self::fun_ctors::*;
 use llvm_sys::prelude::*;
 use llvm_sys::core::*;
 use llvm_sys::{self, LLVMAttribute, LLVMTypeKind};
-use llvm_ext::sys::LLVMVerifyFunctionWithOutput;
+use llvm_sys_ext::sys::LLVMVerifyFunctionWithOutput;
 
 use libc::{c_char, c_uint};
 

@@ -25,6 +25,6 @@ libc = "*"
 # version = "0.1.4"
 # git = "https://github.com/pnkfelix/llvm-sys.rs"
 
-[dependencies.llvm-ext]
+[dependencies.llvm-sys-ext]
 version = "0.1.0"
-git = "https://github.com/pnkfelix/llvm-ext"
+git = "https://github.com/pnkfelix/llvm-sys-ext"
