@@ -15,7 +15,13 @@ path = "src/lib.rs"
 # llvm = "*"
 semver = "*"
 llvm-sys = "*"
-libc = "*"
+
+## (There are other settings for `libc` below, but
+##  this is the one that matches the libc that llvm-sys.rs
+##  pulls in.)
+libc = "^0.1.8"
+# libc = "0.2.2"
+# libc = "*"
 
 # [dependencies.llvm-alt]
 # version = "0.3.1"
